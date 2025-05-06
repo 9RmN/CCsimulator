@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "angelic-phoenix-458806-t3",
+  "private_key_id": "e63e9f2d5067e962014a59fbdae32259cb1ac601",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC4mCk2kEapBnGb\nkXmBaLVqL7BP5BADLOIT43FASlTJAD6fjzbBRl+3WnODIihSYTvmjCR/qcI5Ym5k\n344cXb63Nxr2SzVSO9+d1/8j71sEX4XtQW2/74oe61QtpwMYBvIQohvIrWMKaiYL\ntwLcd06XdtqTNPigEQNyAs8u4shGWmhBurDEZJgrIMze6QS4pIW1NWy3AXFwf4Ck\nWyjEKzI5/9vbyT8NUAJ240UguWUnmeaQ01X16UOYRttBx81Br4VILBMfjdQ7OlrH\nPUS4gDoIunkjwowaE4gbSe3MIz7lZMfZV+gMzUFzgz/sIXoje7Z5EVKY9q354hsF\nh35fHLTJAgMBAAECggEACHrA5edBv7Dylg1cMgQf1UVkiX7191df+T7o7GWduHAA\n8G5xOvajHfaTONJgXMxnpoMIiC7Bo8YwQQT977KkuKDY5bh1thXXA1axOzLbEPvc\nWJY5VuhHhX0U7FXwL/Hdu8LemNzSIF/Y6I/bG0qFuzJz/vAffababCnR35r+TTD0\nyD9JVbZZnT15gFO0Q+Lk+6IwyyC/4zjmYZhun4Up4QlBEpMykeH67fTLisCyEUzB\nGRjP3o8D7RpTvg4kIUX5BXGYNw1Xp+7gpZwMdmPW7MmAhk6z+0YGwfB3FHVSj5VK\n54t6VxXoZhpYKP7HUTrJMn37bwyjIUN9k0+xENF/awKBgQD8X30Cp8vLcW/NYf+E\nbpbp1q+4icfLe+7bDNFSPjDdJuik+m28F0SdY/KGot+hOhLsn08EStcaKueyyIou\ngnubo5fMaoTMdeHEqIXgFHNT4elb7seFdD4JZ3p/IrOiiD7WifjQBP9NDh0tFiBY\nUEGZTfIVUKt12/r84DO0e65QuwKBgQC7P06CnbU3ZR2nMfpqV6UyNcEQoDt5p3Sp\nSpjUBNOmTyg2V5OfcPWZYFioa7fELu9S50cYnssH3t9yl5u9J4hpwZvqeTUwTzqE\n/IPwvguuhwp8lzhP6HVxx6WtmEReVpzom5LOK+xw+PUfsKLtspCENUS/FjOmKVRx\n4VxuIk9KSwKBgHMKS//T4TABq4chrsn9Z0l8lWk3VR3KhpzPgPNOahPFUrMxfKgK\nqzpbfwgkYnAp+spl7Cz2uIqzGB8FDwgYbqQJtH5358UTzzBH6Y61g8Su7CL9+3E4\nBbdfthUSCnSCSrKc/hBE1uOXFXGh7miTXPO29i0FMsNs3UI8KRWSc2lVAoGBAIOd\nwh/JnwFrD+bgGHb7WGDsq+J13phqfnQovTf6lJLH/SoFcPyXt+qxcGAiJy+9Ffge\nHTlPFMNZg5LWwl+5FAfSUTgFLr/gUO/9Vvi3fRqWTWa6HJj+et8ZSHm3GAd/thdC\nk3RcJ3xZYmN+E2glJbPohYQTpQZc8sCBeijn8Pf1AoGBAJMZEY1vOhDkLeBKt3YQ\no15zIR3R57eR89HbAgDICOV15V+eXjn8jVj7FPkXGekkVuRpvKfEh4VUraX96P2g\n3hcoiJBgId812x4hPO/I7z3ZaZMOlWV3g+B55fZuH+WeVvvDQXRSygDUCfXfeQJS\n1nqOkimlypyZwCv9FPtd9iaa\n-----END PRIVATE KEY-----\n",
+  "client_email": "clinical-clerkship-simulator@angelic-phoenix-458806-t3.iam.gserviceaccount.com",
+  "client_id": "115813458682193996200",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/clinical-clerkship-simulator%40angelic-phoenix-458806-t3.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
