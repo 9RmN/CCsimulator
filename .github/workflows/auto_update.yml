@@ -35,6 +35,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git rebase origin/main
           git add responses.csv \
                   initial_assignment_result.csv \
                   assignment_with_unanswered.csv \
@@ -44,4 +46,4 @@ jobs:
                   department_summary.csv \
                   auth.csv
           git commit -m "chore: auto-update data [skip ci]" || echo "No changes to commit"
-          git push
+          git push origin main
