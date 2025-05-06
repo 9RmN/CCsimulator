@@ -1,8 +1,12 @@
+# ワークフロー全体に対して GITHUB_TOKEN に書き込み権を付与
+permissions:
+  contents: write
+
 name: Auto Update Data
 
 on:
   schedule:
-    - cron: '*/2 * * * *'   # 毎2分に実行
+    - cron: '*/5 * * * *'
   repository_dispatch:
     types: [form_submitted]
 
@@ -11,32 +15,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # リポジトリをチェックアウトし、認証情報を維持
       - uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
+      # Python 環境をセットアップ
       - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
+      # 依存ライブラリをインストール
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Google サービスアカウントをセットアップ
       - name: Set up Google Credentials
         run: echo "${{ secrets.GOOGLE_CREDENTIALS }}" > service_account.json
 
+      # データ生成＆認証ファイル作成
       - name: Generate Data & Auth
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_APPLICATION_CREDENTIALS: service_account.json
         run: python update_all.py
 
+      # CSV・auth.csv をコミット＆プッシュ
       - name: Commit CSVs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git rebase origin/main
           git add responses.csv \
                   initial_assignment_result.csv \
                   assignment_with_unanswered.csv \
@@ -46,4 +56,4 @@ jobs:
                   department_summary.csv \
                   auth.csv
           git commit -m "chore: auto-update data [skip ci]" || echo "No changes to commit"
-          git push origin main
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" HEAD:main
