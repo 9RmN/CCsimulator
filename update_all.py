@@ -4,7 +4,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 # 認証情報の設定
-SERVICE_ACCOUNT_FILE = 'angelic-phoenix-458806-t3-e63e9f2d5067.json'
+SERVICE_ACCOUNT_FILE = 'angelic-phoenix-458806-t3-1abff38e943c.json'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 SPREADSHEET_ID = '1Io8Vbh5jLjzvy2Mdm0wKRi-Rrfr09sxd76Iuz-ez4Mo'
 RANGE_NAME = 'フォームの回答 1!A1:AZ1000'
