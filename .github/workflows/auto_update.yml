@@ -1,4 +1,3 @@
-# ワークフロー全体に対して GITHUB_TOKEN に書き込み権を付与
 permissions:
   contents: write
 
@@ -6,7 +5,7 @@ name: Auto Update Data
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/2 * * * *'
   repository_dispatch:
     types: [form_submitted]
 
@@ -15,32 +14,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # リポジトリをチェックアウトし、認証情報を維持
       - uses: actions/checkout@v3
         with:
           persist-credentials: true
 
-      # Python 環境をセットアップ
       - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      # 依存ライブラリをインストール
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Google サービスアカウントをセットアップ
       - name: Set up Google Credentials
-        run: echo "${{ secrets.GOOGLE_CREDENTIALS }}" > service_account.json
+        run: |
+          cat << 'EOF' > service_account.json
+          ${{ secrets.GOOGLE_CREDENTIALS }}
+          EOF
 
-      # データ生成＆認証ファイル作成
       - name: Generate Data & Auth
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_APPLICATION_CREDENTIALS: service_account.json
         run: python update_all.py
 
-      # CSV・auth.csv をコミット＆プッシュ
+      # Commit CSVs...
       - name: Commit CSVs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
