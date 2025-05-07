@@ -17,30 +17,10 @@ if 'user_id' not in st.session_state:
     st.session_state['user_id'] = ''
 
 # --- Pepper の取得 ---
-# Streamlit secrets.toml の [auth] セクション、もしくはトップレベルに定義された PEPPER を参照
-pepper = None
-# まず [auth] セクション内をチェック
 try:
-    pepper = st.secrets['auth'].get('PEPPER')
-    if pepper:
-        st.info("🔒 Pepper を st.secrets['auth']['PEPPER'] から読み込みました")
-except Exception:
-    pass
-# 次にトップレベルの PEPPER をチェック
-if not pepper:
-    try:
-        pepper = st.secrets.get('PEPPER')
-        if pepper:
-            st.info("🔒 Pepper を st.secrets['PEPPER'] から読み込みました")
-    except Exception:
-        pass
-# 最後に環境変数をフォールバック
-if not pepper:
-    pepper = os.environ.get('PEPPER')
-    if pepper:
-        st.info("🔒 Pepper を環境変数から読み込みました")
-# それでもなければエラー
-if not pepper:
+    pepper = st.secrets["PEPPER"]
+    st.info("🔒 Pepper を st.secrets['PEPPER'] から読み込みました")
+except KeyError:
     st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
     st.stop()
 
