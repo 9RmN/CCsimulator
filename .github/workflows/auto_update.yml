@@ -14,6 +14,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
 
+    # スクリプトが使う環境変数はここでまとめて定義
     env:
       SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
       PEPPER:         ${{ secrets.PEPPER }}
@@ -32,12 +33,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Set up Google Credentials
-        run: echo "${{ secrets.GOOGLE_CREDENTIALS }}" > service_account.json
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          # secrets.GOOGLE_CREDENTIALS にサービスアカウント JSON をそのまま入れておいてください
+          credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
 
       - name: Generate Data & Auth
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: service_account.json
         run: python -u update_all.py
 
       - name: Commit CSVs
