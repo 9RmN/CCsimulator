@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import subprocess
 import hashlib
 
 # --- 認証ステートの初期化 ---
@@ -14,7 +13,7 @@ if st.session_state['authenticated']:
     if st.sidebar.button("ログアウト"):
         st.session_state['authenticated'] = False
         st.session_state['admin_id'] = None
-        # ページを更新してください
+        st.experimental_rerun()
 
 # --- 認証フォーム表示 ---
 if not st.session_state['authenticated']:
@@ -25,15 +24,12 @@ if not st.session_state['authenticated']:
         try:
             auth_df = pd.read_csv(
                 "auth.csv",
-                dtype={
-                    'student_id': str,
-                    'password_hash': str,
-                    'role': str
-                }
+                dtype={'student_id': str, 'password_hash': str, 'role': str}
             )
         except FileNotFoundError:
             st.error("auth.csv が見つかりません。管理者用認証データを配置してください。")
             st.stop()
+
         pepper = st.secrets["PEPPER"]
         hashed = hashlib.sha256((pwd_input + pepper).encode()).hexdigest()
         row = auth_df[
@@ -45,7 +41,7 @@ if not st.session_state['authenticated']:
             st.session_state['authenticated'] = True
             st.session_state['admin_id'] = sid_input
             st.success(f"認証成功：管理者ID {sid_input}")
-            # ページを更新してください
+            st.experimental_rerun()
         else:
             st.error("認証失敗：IDまたはパスワードが違うか、管理者権限がありません。")
     st.stop()
@@ -61,9 +57,6 @@ st.markdown(
 
 @st.cache_data(ttl=300)
 def load_data():
-    # 全パイプラインを実行（最新データを生成）
-    subprocess.run(['python', 'update_all.py'], check=True)
-
     # responses.csv 読み込み + 正規化
     responses_df = pd.read_csv("responses.csv", dtype=str)
     responses_df['student_id'] = responses_df['student_id'].str.lstrip('0')
@@ -74,12 +67,14 @@ def load_data():
         "lottery_order.csv",
         dtype={'student_id': str, 'lottery_order': int}
     )
-    # 必須の分析CSV読み込み
+
+    # 必須の分析CSV読み込み（無ければ None）
     def load_optional(file):
         try:
             return pd.read_csv(file)
         except FileNotFoundError:
             return None
+
     assign_matrix = load_optional("assignment_matrix.csv")
     dept_summary  = load_optional("department_summary.csv")
 
@@ -91,17 +86,15 @@ responses_df, lottery_df, assign_matrix, dept_summary = load_data()
 st.title("管理者ダッシュボード")
 
 # 手動更新ボタン：キャッシュクリア & 再実行
-def refresh():
+if st.button("🌀 最新データを取得"):
     st.cache_data.clear()
-    # ページを更新してください
-
-st.button("🌀 最新データを取得", on_click=refresh)
+    st.experimental_rerun()
 
 # 回答率表示
-answered_ids = set(responses_df['student_id'])
-all_ids = [str(i) for i in range(1, 111)]
+answered_ids  = set(responses_df['student_id'])
+all_ids       = [str(i) for i in range(1, 111)]
 answered_count = len(answered_ids & set(all_ids))
-total_count = len(all_ids)
+total_count    = len(all_ids)
 st.markdown(f"**回答済み：{answered_count} / {total_count} 人**")
 
 # 学生番号一覧（未回答は赤背景）
@@ -110,7 +103,6 @@ df_ids['answered'] = df_ids['student_id'].isin(answered_ids)
 def highlight_unanswered(val):
     return 'background-color: #f8d7da' if not val else ''
 st.subheader("学生番号一覧（未回答は赤背景）")
-# 'answered' 列で背景色を付け、非表示にする
 styled = (
     df_ids.style
     .applymap(highlight_unanswered, subset=['answered'])
@@ -142,7 +134,7 @@ hd = cap_df["hospital_department"].str.split("-", n=1, expand=True)
 hospital_list   = sorted(hd[0].unique())
 department_list = sorted(hd[1].unique())
 
-student_id = st.text_input("仮想 Student ID", value="22", disabled=True)
+student_id     = st.text_input("仮想 Student ID", value="22", disabled=True)
 lottery_number = st.number_input("仮想 抽選順位", min_value=1, max_value=9999, value=101, disabled=True)
 
 st.subheader("🎯 第1〜第10希望を入力（病院＋診療科）")
@@ -159,7 +151,7 @@ for i in range(1, 11):
 if st.button("🧮 シミュレーション実行"):
     for idx, dept in enumerate(input_hopes, start=1):
         col_name_prob = f"hope_{idx}_確率"
-        if student_id and col_name_prob in prob_df.columns:
+        if col_name_prob in prob_df.columns:
             row = prob_df[prob_df['student_id'] == student_id]
             prob = row.iloc[0][col_name_prob] if not row.empty else None
             st.write(f"第{idx}希望: {dept} → 通過確率: {prob if prob is not None else '不明'}")
@@ -169,8 +161,14 @@ if st.button("🧮 シミュレーション実行"):
 # 抽選順位中央値表示
 st.header("🏁 診療科ごとの通過順位中央値（通過ライン推定）")
 try:
-    assignment_df = pd.read_csv("initial_assignment_result.csv", dtype={'student_id': str, 'assigned_department': str, 'term': str})
-    lottery_df    = pd.read_csv("lottery_order.csv", dtype={'student_id': str, 'lottery_order': int})
+    assignment_df = pd.read_csv(
+        "initial_assignment_result.csv",
+        dtype={'student_id': str, 'assigned_department': str, 'term': str}
+    )
+    lottery_df    = pd.read_csv(
+        "lottery_order.csv",
+        dtype={'student_id': str, 'lottery_order': int}
+    )
     merged_df     = assignment_df.merge(lottery_df, on="student_id")
     result = (
         merged_df.groupby(["assigned_department", "term"])['lottery_order']
