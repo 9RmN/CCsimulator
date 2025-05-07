@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import hashlib
@@ -7,6 +8,20 @@ if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 if 'admin_id' not in st.session_state:
     st.session_state['admin_id'] = None
+
+# --- Pepper の取得 ---
+try:
+    # Streamlit Cloud の secrets.toml から
+    PEPPER = st.secrets['auth']['pepper']
+    st.info("🔒 Pepper を st.secrets から読み込みました")
+except Exception:
+    # локал環境では環境変数から
+    PEPPER = os.environ.get('PEPPER')
+    if PEPPER:
+        st.info("🔒 Pepper を環境変数から読み込みました")
+    else:
+        st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
+        st.stop()
 
 # --- ログアウト処理 ---
 if st.session_state['authenticated']:
@@ -30,8 +45,7 @@ if not st.session_state['authenticated']:
             st.error("auth.csv が見つかりません。管理者用認証データを配置してください。")
             st.stop()
 
-        pepper = st.secrets["PEPPER"]
-        hashed = hashlib.sha256((pwd_input + pepper).encode()).hexdigest()
+        hashed = hashlib.sha256((pwd_input + PEPPER).encode()).hexdigest()
         row = auth_df[
             (auth_df['student_id'] == sid_input) &
             (auth_df['password_hash'] == hashed) &
@@ -57,18 +71,15 @@ st.markdown(
 
 @st.cache_data(ttl=300)
 def load_data():
-    # responses.csv 読み込み + 正規化
     responses_df = pd.read_csv("responses.csv", dtype=str)
     responses_df['student_id'] = responses_df['student_id'].str.lstrip('0')
     responses_df = responses_df.drop_duplicates(subset='student_id', keep='last')
 
-    # 抽選順位情報読み込み
     lottery_df = pd.read_csv(
         "lottery_order.csv",
         dtype={'student_id': str, 'lottery_order': int}
     )
 
-    # 必須の分析CSV読み込み（無ければ None）
     def load_optional(file):
         try:
             return pd.read_csv(file)
@@ -80,55 +91,46 @@ def load_data():
 
     return responses_df, lottery_df, assign_matrix, dept_summary
 
-# データロード
 responses_df, lottery_df, assign_matrix, dept_summary = load_data()
 
 st.title("管理者ダッシュボード")
 
-# 手動更新ボタン：キャッシュクリア & 再実行
 if st.button("🌀 最新データを取得"):
     st.cache_data.clear()
     st.experimental_rerun()
 
-# 回答率表示
 answered_ids  = set(responses_df['student_id'])
 all_ids       = [str(i) for i in range(1, 111)]
 answered_count = len(answered_ids & set(all_ids))
 total_count    = len(all_ids)
 st.markdown(f"**回答済み：{answered_count} / {total_count} 人**")
 
-# 学生番号一覧（未回答は赤背景）
 df_ids = pd.DataFrame({'student_id': all_ids})
 df_ids['answered'] = df_ids['student_id'].isin(answered_ids)
+
 def highlight_unanswered(val):
     return 'background-color: #f8d7da' if not val else ''
-st.subheader("学生番号一覧（未回答は赤背景）")
-styled = (
-    df_ids.style
-    .applymap(highlight_unanswered, subset=['answered'])
-    .hide(axis='columns', subset=['answered'])
-)
-st.dataframe(styled, use_container_width=True)
 
-# 配属マトリクス表示
+st.subheader("学生番号一覧（未回答は赤背景）")
+st.dataframe(
+    df_ids.style.applymap(highlight_unanswered, subset=['answered']).hide(axis='columns', subset=['answered']),
+    use_container_width=True
+)
+
 st.subheader("配属マトリクス（学生×Term）")
 if assign_matrix is not None:
     st.dataframe(assign_matrix, use_container_width=True)
 else:
     st.warning("assignment_matrix.csv が見つかりません。生成後、再デプロイしてください。")
 
-# 部門サマリ表示
 st.subheader("部門サマリ（希望者数・定員・配属数・中央値）")
 if dept_summary is not None:
     st.dataframe(dept_summary, use_container_width=True)
 else:
     st.warning("department_summary.csv が見つかりません。生成後、再デプロイしてください。")
 
-# 🧪 仮希望入力シミュレーション（管理者専用）
 st.header("🧪 仮希望入力シミュレーション（非公開ツール）")
 prob_df = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id': str})
-
-# department_capacity.csv からマスターリスト生成
 cap_df = pd.read_csv("department_capacity.csv")
 hd = cap_df["hospital_department"].str.split("-", n=1, expand=True)
 hospital_list   = sorted(hd[0].unique())
@@ -158,7 +160,6 @@ if st.button("🧮 シミュレーション実行"):
         else:
             st.write(f"第{idx}希望: {dept} → 通過確率データ未整備")
 
-# 抽選順位中央値表示
 st.header("🏁 診療科ごとの通過順位中央値（通過ライン推定）")
 try:
     assignment_df = pd.read_csv(
