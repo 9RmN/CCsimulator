@@ -1,4 +1,6 @@
 import os
+import json
+import hashlib
 import pandas as pd
 import subprocess
 from google.auth import default
@@ -8,6 +10,11 @@ from googleapiclient.discovery import build
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 if not SPREADSHEET_ID:
     raise RuntimeError("環境変数 SPREADSHEET_ID が設定されていません。")
+
+PEPPER = os.environ.get("PEPPER")
+if not PEPPER:
+    raise RuntimeError("環境変数 PEPPER が設定されていません。")
+
 # シート範囲（必要に応じてシート名を調整）
 RANGE_NAME = os.environ.get("RANGE_NAME", "'フォームの回答'!A1:AZ1000")
 
@@ -62,12 +69,25 @@ except Exception as e:
     print("❌ responses.csv への変換に失敗:", e)
     exit(1)
 
-# Step 2.5: auth.csv を再生成
-print("🔐 auth.csv を再生成中…")
-subprocess.run(["python", "-u", "generate_auth.py"], check=True)
+# Step 3: auth.csv を生成（generate_auth を統合）
+print("🔐 auth.csv を生成中…")
+auth_source = pd.read_csv("form_responses_final.csv", dtype=str)
+auth_source["student_id"] = auth_source["学生番号"].str.lstrip("0")
+auth_source = auth_source.drop_duplicates(subset="student_id", keep="last")
+rows = []
+for _, row in auth_source.iterrows():
+    sid = row["student_id"]
+    pwd = row.get("パスワード", "")
+    if pd.isna(pwd) or pwd == "":
+        continue
+    hash_hex = hashlib.sha256((pwd + PEPPER).encode("utf-8")).hexdigest()
+    role = "admin" if sid == "22" else "student"
+    rows.append({"student_id": sid, "password_hash": hash_hex, "role": role})
+auth_df = pd.DataFrame(rows, columns=["student_id","password_hash","role"])
+auth_df.to_csv("auth.csv", index=False)
 print("✅ auth.csv を生成しました")
 
-# --- その他スクリプト実行 ---
+# Step 4: その他スクリプト実行
 scripts = [
     "initial_assignment.py",
     "simulate_with_unanswered.py",
