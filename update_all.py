@@ -1,13 +1,17 @@
 import os
-import subprocess
-import pandas as pd
-from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from google.auth import default
 
-# --- 環境変数  ---
-SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
-RANGE_NAME    = 'フォームの回答!A1:AZ1000'
-SERVICE_ACCOUNT_FILE = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+# Application Default Credentials を取得
+# env にある GOOGLE_CREDENTIALS を元に auth action が設定してくれる
+creds, _ = default(scopes=["https://www.googleapis.com/auth/spreadsheets.readonly",
+                           "https://www.googleapis.com/auth/spreadsheets"])
+
+service = build('sheets', 'v4', credentials=creds)
+
+SPREADSHEET_ID = os.environ['SPREADSHEET_ID']
+RANGE_NAME = "'フォームの回答'!A1:AZ1000"
+
 
 # Step 1: Googleフォーム回答を取得
 print("📥 Googleフォーム回答を取得中...")
