@@ -15,19 +15,13 @@ if 'authenticated' not in st.session_state:
 if 'user_id' not in st.session_state:
     st.session_state['user_id'] = ''
 
-# --- Pepper の取得 ---
+# --- Pepper の取得 (st.secrets を優先) ---
 try:
-    # secrets.toml の [auth] セクションから取得
-    PEPPER = st.secrets['auth']['pepper']
+    pepper = st.secrets['auth']['pepper']
     st.info("🔒 Pepper を st.secrets['auth']['pepper'] から読み込みました")
 except KeyError:
-    # フォールバックで環境変数から取得
-    PEPPER = os.environ.get('PEPPER')
-    if PEPPER:
-        st.info("🔒 Pepper を環境変数から読み込みました")
-    else:
-        st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
-        st.stop()
+    st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
+    st.stop()
 
 @st.cache_data(ttl=60)
 def load_data():
@@ -48,10 +42,12 @@ def load_data():
         "responses.csv",
         dtype={'student_id': str}
     )
+
     # 正規化
     responses_df['student_id'] = responses_df['student_id'].str.lstrip('0')
     prob_df['student_id']      = prob_df['student_id'].str.lstrip('0')
     terms_df['student_id']     = terms_df['student_id'].str.lstrip('0')
+
     # インデックス設定
     responses_df.set_index('student_id', inplace=True)
     prob_df.set_index('student_id', inplace=True)
@@ -72,7 +68,7 @@ def verify_user(sid, pwd):
     ]
     if row.empty:
         return False
-    hashed = hashlib.sha256((pwd + PEPPER).encode()).hexdigest()
+    hashed = hashlib.sha256((pwd + pepper).encode()).hexdigest()
     return hashed == row.iloc[0]['password_hash']
 
 # --- ログイン画面 ---
@@ -142,28 +138,21 @@ else:
 
 # 人気診療科トップ15表示
 st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
-# 数値化
 median_col = rank_df.columns[1]
 rank_df[median_col] = pd.to_numeric(rank_df[median_col], errors='coerce')
-# グループ化＋中央値上位15
 top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
-
-# Altair で横棒グラフ
 import altair as alt
 chart_df = top15.reset_index().rename(
     columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'}
 )
 top15_df = chart_df.sort_values('抽選順位中央値')
-
 chart = alt.Chart(top15_df).mark_bar().encode(
     x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
     y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
 ).properties(height=400)
-
 text = alt.Chart(top15_df).mark_text(align='left', dx=3, baseline='middle').encode(
     y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending')),
     x=alt.X('抽選順位中央値:Q'),
     text=alt.Text('抽選順位中央値:Q')
 )
-
 st.altair_chart(chart + text, use_container_width=True)
