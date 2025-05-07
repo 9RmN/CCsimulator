@@ -17,8 +17,9 @@ if 'user_id' not in st.session_state:
 
 # --- Pepper の取得 (st.secrets を優先) ---
 try:
-    pepper = st.secrets['auth']['pepper']
-    st.info("🔒 Pepper を st.secrets['auth']['pepper'] から読み込みました")
+    # secrets.toml の [auth] セクションに登録したキー名に合わせて大文字で取得
+    pepper = st.secrets['auth']['PEPPER']
+    st.info("🔒 Pepper を st.secrets['auth']['PEPPER'] から読み込みました")
 except KeyError:
     st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
     st.stop()
@@ -155,4 +156,5 @@ text = alt.Chart(top15_df).mark_text(align='left', dx=3, baseline='middle').enco
     x=alt.X('抽選順位中央値:Q'),
     text=alt.Text('抽選順位中央値:Q')
 )
+
 st.altair_chart(chart + text, use_container_width=True)
