@@ -1,29 +1,43 @@
 import os
+import json
+import subprocess
+import pandas as pd
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from google.auth import default
 
-# Application Default Credentials を取得
-# env にある GOOGLE_CREDENTIALS を元に auth action が設定してくれる
-creds, _ = default(scopes=["https://www.googleapis.com/auth/spreadsheets.readonly",
-                           "https://www.googleapis.com/auth/spreadsheets"])
+# --- 環境変数取得 ---
+SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
+if not SPREADSHEET_ID:
+    raise RuntimeError("環境変数 SPREADSHEET_ID が設定されていません。")
+# シート範囲（必要に応じてシート名を調整）
+RANGE_NAME = os.environ.get("RANGE_NAME", "'フォームの回答'!A1:AZ1000")
 
-service = build('sheets', 'v4', credentials=creds)
+# サービスアカウント JSON を環境変数から読み込む
+GOOGLE_CREDS = os.environ.get("GOOGLE_CREDENTIALS")
+if not GOOGLE_CREDS:
+    raise RuntimeError("環境変数 GOOGLE_CREDENTIALS が設定されていません。")
+try:
+    info = json.loads(GOOGLE_CREDS)
+except json.JSONDecodeError as e:
+    raise RuntimeError(f"GOOGLE_CREDENTIALS の JSON デコードに失敗しました: {e}")
 
-SPREADSHEET_ID = os.environ['SPREADSHEET_ID']
-RANGE_NAME = "'フォームの回答'!A1:AZ1000"
-
+# --- Google Sheets 認証セットアップ ---
+creds = service_account.Credentials.from_service_account_info(
+    info,
+    scopes=[
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ],
+)
+service = build("sheets", "v4", credentials=creds)
 
 # Step 1: Googleフォーム回答を取得
 print("📥 Googleフォーム回答を取得中...")
-creds = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE,
-    scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
-)
-service = build('sheets', 'v4', credentials=creds)
-sheet = service.spreadsheets()
-result = sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=RANGE_NAME).execute()
-values = result.get('values', [])
-
+result = service.spreadsheets().values().get(
+    spreadsheetId=SPREADSHEET_ID,
+    range=RANGE_NAME
+).execute()
+values = result.get("values", [])
 if not values:
     print("❌ データが取得できませんでした")
     exit(1)
@@ -35,63 +49,48 @@ print("✅ form_responses_final.csv を保存しました")
 # Step 2: responses.csv に変換＋重複排除
 print("🔄 responses.csv に変換中...")
 try:
-    df = pd.read_csv("form_responses_final.csv", dtype=str)
-
+    df2 = pd.read_csv("form_responses_final.csv", dtype=str)
     output = {
-        "student_id": df.iloc[:, 1],
-        "password": df.iloc[:, 2],
+        "student_id": df2.iloc[:, 1].str.lstrip("0"),
+        "password":   df2.iloc[:, 2]
     }
-
     for i in range(1, 21):
-        hospital_col   = i * 2 + 1
-        department_col = i * 2 + 2
+        hcol = i * 2 + 1
+        dcol = i * 2 + 2
         try:
-            hospital   = df.iloc[:, hospital_col].fillna("")
-            department = df.iloc[:, department_col].fillna("")
-            combined   = hospital + "-" + department
-            output[f"hope_{i}"] = combined.str.strip().replace("", pd.NA)
+            hosp = df2.iloc[:, hcol].fillna("")
+            dept = df2.iloc[:, dcol].fillna("")
+            combined = (hosp + "-" + dept).str.strip().replace("", pd.NA)
+            output[f"hope_{i}"] = combined
         except Exception:
             output[f"hope_{i}"] = pd.NA
-
     responses = pd.DataFrame(output)
-    responses['student_id'] = responses['student_id'].str.lstrip('0')
     before = len(responses)
-    responses = responses.drop_duplicates(subset='student_id', keep='last')
-    after = len(responses)
-    print(f"✅ 重複排除: {before - after} 件削除, 残り {after} 件")
-
+    responses = responses.drop_duplicates(subset="student_id", keep="last")
+    deleted = before - len(responses)
+    print(f"✅ 重複排除: {deleted} 件削除, 残り {len(responses)} 件")
     responses.to_csv("responses.csv", index=False)
-    print("✅ responses.csv を生成しました\n")
-
+    print("✅ responses.csv を生成しました")
 except Exception as e:
-    print("❌ responses.csv への変換に失敗しました:", e)
+    print("❌ responses.csv への変換に失敗:", e)
     exit(1)
 
-# Step 3: auth.csv の再生成
+# Step 2.5: auth.csv を再生成
 print("🔐 auth.csv を再生成中…")
-subprocess.run(["python", "generate_auth.py"], check=True)
+subprocess.run(["python", "-u", "generate_auth.py"], check=True)
 print("✅ auth.csv を生成しました")
 
-# Step 4: 初期配属
-print("⚙️ initial_assignment.py を実行中...")
-subprocess.run(['python', 'initial_assignment.py'], check=True)
-
-# Step 5: 未回答者を含めた配属シミュレーション
-print("⚙️ simulate_with_unanswered.py を実行中...")
-subprocess.run(['python', 'simulate_with_unanswered.py'], check=True)
-
-# Step 6: Monte Carlo 確率生成
-print("⚙️ generate_probability.py を実行中...")
-subprocess.run(['python', 'generate_probability.py'], check=True)
-
-# Step 7: 人気科ランキング生成
-print("⚙️ generate_popular_rank.py を実行中...")
-subprocess.run(['python', 'generate_popular_rank.py'], check=True)
-
-# Step 8: 結果分析
-print("⚙️ analyze_assignment.py を実行中...")
-subprocess.run(['python', 'analyze_assignment.py'], check=True)
-print("⚙️ analyze_department.py を実行中...")
-subprocess.run(['python', 'analyze_department.py'], check=True)
+# --- その他スクリプト実行 ---
+scripts = [
+    "initial_assignment.py",
+    "simulate_with_unanswered.py",
+    "generate_probability.py",
+    "generate_popular_rank.py",
+    "analyze_assignment.py",
+    "analyze_department.py"
+]
+for script in scripts:
+    print(f"⚙️ {script} を実行中...")
+    subprocess.run(["python", script], check=True)
 
 print("\n✅ 全パイプライン実行完了！")
