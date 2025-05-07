@@ -18,11 +18,17 @@ if 'user_id' not in st.session_state:
 
 # --- Pepper の取得 ---
 try:
-    pepper = st.secrets["PEPPER"]
-    st.info("🔒 Pepper を st.secrets から読み込みました")
-except KeyError:
-    st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
-    st.stop()
+    # 管理者アプリと同様に [auth] セクションから読み込む
+    pepper = st.secrets['auth']['pepper']
+    st.info("🔒 Pepper を st.secrets['auth']['pepper'] から読み込みました")
+except Exception:
+    # ローカル環境やトップレベル定義の場合は環境変数を参照
+    pepper = os.environ.get('PEPPER')
+    if pepper:
+        st.info("🔒 Pepper を環境変数から読み込みました")
+    else:
+        st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
+        st.stop()
 
 @st.cache_data(ttl=60)
 def load_data():
@@ -65,7 +71,7 @@ def verify_user(sid, pwd):
         return False
     row = auth_df[
         (auth_df['student_id'] == sid) &
-        (auth_df['role'].isin(['student','admin']))
+        (auth_df['role'].isin(['student', 'admin']))
     ]
     if row.empty:
         return False
@@ -122,9 +128,12 @@ df_disp = pd.DataFrame(display)
 def color_prob(val):
     try:
         num = float(val)
-        if num >= 80: return 'background-color:#d4edda'
-        if num >= 50: return 'background-color:#fff3cd'
-        if num > 0:   return 'background-color:#f8d7da'
+        if num >= 80:
+            return 'background-color:#d4edda'
+        if num >= 50:
+            return 'background-color:#fff3cd'
+        if num > 0:
+            return 'background-color:#f8d7da'
     except:
         pass
     return ''
