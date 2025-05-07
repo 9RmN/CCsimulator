@@ -14,27 +14,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
         with:
           persist-credentials: true
 
-      - uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
 
       - name: Set up Google Credentials
         run: |
-        echo "${{ secrets.GOOGLE_CREDENTIALS }}" > service_account.json
-
+          echo "${{ secrets.GOOGLE_CREDENTIALS }}" > service_account.json
 
       - name: Generate Data & Auth
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_APPLICATION_CREDENTIALS: service_account.json
-        run: python update_all.py
+          PEPPER: ${{ secrets.PEPPER }}
+        run: |
+          python -u update_all.py
 
       - name: Commit CSVs
         env:
@@ -42,13 +46,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add responses.csv \
-                  initial_assignment_result.csv \
-                  assignment_with_unanswered.csv \
-                  probability_montecarlo_combined.csv \
-                  popular_departments_rank_combined.csv \
-                  assignment_matrix.csv \
-                  department_summary.csv \
-                  auth.csv
+          git add \
+            responses.csv \
+            initial_assignment_result.csv \
+            assignment_with_unanswered.csv \
+            probability_montecarlo_combined.csv \
+            popular_departments_rank_combined.csv \
+            assignment_matrix.csv \
+            department_summary.csv \
+            auth.csv
           git commit -m "chore: auto-update data [skip ci]" || echo "No changes to commit"
-          git push
+          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main
