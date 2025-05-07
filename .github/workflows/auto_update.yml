@@ -31,7 +31,10 @@ jobs:
 
       - name: Set up Google Credentials
         run: |
-          echo "${{ secrets.GOOGLE_CREDENTIALS }}" > service_account.json
+          cat <<EOF > service_account.json
+${{ secrets.GOOGLE_CREDENTIALS }}
+EOF
+
 
       - name: Generate Data & Auth
         env:
