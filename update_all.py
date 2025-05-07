@@ -69,7 +69,7 @@ except Exception as e:
     exit(1)
 
 print("🔐 auth.csv を再生成中…")
-subprocess.run(["python", "generate_auth.py"], check=True)
+subprocess.run(["python", "-u", "generate_auth.py"], check=True)
 print("✅ auth.csv を生成しました")
 
 # Debug: hope_1 のユニーク値確認
