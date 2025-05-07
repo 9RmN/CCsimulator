@@ -17,19 +17,19 @@ if 'user_id' not in st.session_state:
     st.session_state['user_id'] = ''
 
 # --- Pepper の取得 ---
-# top-level PEPPER
-pepper = st.secrets.get("PEPPER")
+# Top-level: 大文字・小文字両方チェック
+pepper = st.secrets.get("PEPPER") or st.secrets.get("pepper")
 if pepper:
-    st.info("🔒 Pepper を st.secrets['PEPPER'] から読み込みました")
+    st.info("🔒 Pepper を st.secrets から読み込みました")
 else:
-    # グループ化された auth セクション内を確認
+    # 次に [auth] セクション内をチェック（大文字・小文字両方）
     auth_sec = st.secrets.get("auth", {})
-    pepper = auth_sec.get("pepper") or auth_sec.get("PEPPER")
+    pepper = auth_sec.get("PEPPER") or auth_sec.get("pepper")
     if pepper:
         st.info("🔒 Pepper を st.secrets['auth'] から読み込みました")
-# 環境変数フォールバック
+# 最後に環境変数をフォールバック（大文字・小文字両方）
 if not pepper:
-    pepper = os.environ.get('PEPPER')
+    pepper = os.environ.get('PEPPER') or os.environ.get('pepper')
     if pepper:
         st.info("🔒 Pepper を環境変数から読み込みました")
 # 見つからない場合は停止
