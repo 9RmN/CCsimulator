@@ -1,11 +1,14 @@
 # generate_auth.py
 
+import os
 import hashlib
 import pandas as pd
-import streamlit as st  # ← Streamlit Secrets を使う
 
-# --- Secrets からトップレベルPEPPERを取得 ---
-pepper = st.secrets["PEPPER"]
+# CI では環境変数 PEPPER、Cloud では st.secrets
+pepper = os.getenv("PEPPER")
+if not pepper:
+    import streamlit as st
+    pepper = st.secrets["PEPPER"]
 
 # フォーム回答 CSV を読み込み
 df = pd.read_csv("form_responses_final.csv", dtype=str)
@@ -15,7 +18,7 @@ df = df.drop_duplicates(subset="student_id", keep="last")
 rows = []
 for _, row in df.iterrows():
     sid = row["student_id"]
-    pwd = row["password"]  # カラム名が異なる場合は合わせてください
+    pwd = row["password"]  # フォームのカラム名に合わせて
     if pd.isna(pwd) or pwd == "":
         continue
     hash_hex = hashlib.sha256((pwd + pepper).encode("utf-8")).hexdigest()
