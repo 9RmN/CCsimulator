@@ -1,12 +1,14 @@
 import subprocess
 import pandas as pd
+import os
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 # 認証情報の設定
-SERVICE_ACCOUNT_FILE = 'angelic-phoenix-458806-t3-1abff38e943c.json'
+# 環境変数 GOOGLE_APPLICATION_CREDENTIALS を参照、未設定時はデフォルトの service_account.json
+SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-SPREADSHEET_ID = '1Io8Vbh5jLjzvy2Mdm0wKRi-Rrfr09sxd76Iuz-ez4Mo'
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 RANGE_NAME = 'フォームの回答 1!A1:AZ1000'
 
 # Step 1: Googleフォーム回答を取得
@@ -66,8 +68,6 @@ except Exception as e:
     print("❌ responses.csv への変換に失敗しました:", e)
     exit(1)
 
-import subprocess
-# auth.csvの作成
 print("🔐 auth.csv を再生成中…")
 subprocess.run(["python", "generate_auth.py"], check=True)
 print("✅ auth.csv を生成しました")
