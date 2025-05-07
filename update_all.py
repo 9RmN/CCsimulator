@@ -1,4 +1,4 @@
-import os
+=import os
 import json
 import hashlib
 import pandas as pd
@@ -6,25 +6,33 @@ import subprocess
 from google.auth import default
 from googleapiclient.discovery import build
 
-# --- 環境変数チェック ---
+# --- 環境変数 & st.secrets から Pepper 取得 ---
+try:
+    # Streamlit Cloud の st.secrets を優先
+    import streamlit as st  # ensure streamlit is in requirements if used
+    PEPPER = st.secrets["auth"]["pepper"]
+    print("ℹ️ PEPPER を st.secrets から読み込みました")
+except Exception:
+    PEPPER = os.environ.get("PEPPER")
+    if PEPPER:
+        print("ℹ️ PEPPER を環境変数から読み込みました")
+
+# --- SPREADSHEET_ID のチェック ---
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 if not SPREADSHEET_ID:
     raise RuntimeError("環境変数 SPREADSHEET_ID が設定されていません。")
 
-# Pepper は optional: 認証ファイル生成に必要
-PEPPER = os.environ.get("PEPPER")
-
-# シート範囲（必要に応じてシート名を調整）
+# --- シート範囲設定 ---
 RANGE_NAME = os.environ.get("RANGE_NAME", "'フォームの回答'!A1:AZ1000")
 
-# --- Application Default Credentials で認証 ---
+# --- Google API 認証 ---
 creds, _ = default(scopes=[
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ])
 service = build("sheets", "v4", credentials=creds)
 
-# Step 1: Googleフォーム回答を取得
+# --- Step 1: フォーム回答取得 ---
 print("📥 Googleフォーム回答を取得中...")
 result = service.spreadsheets().values().get(
     spreadsheetId=SPREADSHEET_ID,
@@ -35,11 +43,12 @@ if not values:
     print("❌ データが取得できませんでした")
     exit(1)
 
+# DataFrame 生成 & 保存
 df = pd.DataFrame(values[1:], columns=values[0])
 df.to_csv("form_responses_final.csv", index=False)
 print("✅ form_responses_final.csv を保存しました")
 
-# Step 2: responses.csv に変換＋重複排除
+# --- Step 2: responses.csv 生成 ---
 print("🔄 responses.csv に変換中...")
 try:
     df2 = pd.read_csv("form_responses_final.csv", dtype=str)
@@ -68,7 +77,7 @@ except Exception as e:
     print("❌ responses.csv への変換に失敗:", e)
     exit(1)
 
-# Step 3: auth.csv の生成（PEPPER が設定されていない場合はスキップ）
+# --- Step 3: auth.csv 生成（PEPPER 必要） ---
 if PEPPER:
     print("🔐 auth.csv を生成中…")
     auth_src = pd.read_csv("form_responses_final.csv", dtype=str)
@@ -87,9 +96,9 @@ if PEPPER:
     auth_df.to_csv("auth.csv", index=False)
     print("✅ auth.csv を生成しました")
 else:
-    print("⚠️ 環境変数 PEPPER が設定されていないため auth.csv の生成をスキップします")
+    print("⚠️ PEPPER が設定されていないため auth.csv をスキップします")
 
-# Step 4: その他スクリプト実行
+# --- Step 4: その他スクリプト実行 ---
 scripts = [
     "initial_assignment.py",
     "simulate_with_unanswered.py",
