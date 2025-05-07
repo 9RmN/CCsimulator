@@ -5,7 +5,7 @@ import hashlib
 import pandas as pd
 
 # CI では環境変数 PEPPER、Cloud では st.secrets
-pepper = os.getenv("PEPPER")
+pepper = os.environ["PEPPER"]
 if not pepper:
     import streamlit as st
     pepper = st.secrets["PEPPER"]
