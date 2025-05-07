@@ -1,34 +1,21 @@
 import os
-import json
-import subprocess
 import pandas as pd
-from google.oauth2 import service_account
+import subprocess
+from google.auth import default
 from googleapiclient.discovery import build
 
-# --- 環境変数取得 ---
+# --- 環境変数チェック ---
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 if not SPREADSHEET_ID:
     raise RuntimeError("環境変数 SPREADSHEET_ID が設定されていません。")
 # シート範囲（必要に応じてシート名を調整）
 RANGE_NAME = os.environ.get("RANGE_NAME", "'フォームの回答'!A1:AZ1000")
 
-# サービスアカウント JSON を環境変数から読み込む
-GOOGLE_CREDS = os.environ.get("GOOGLE_CREDENTIALS")
-if not GOOGLE_CREDS:
-    raise RuntimeError("環境変数 GOOGLE_CREDENTIALS が設定されていません。")
-try:
-    info = json.loads(GOOGLE_CREDS)
-except json.JSONDecodeError as e:
-    raise RuntimeError(f"GOOGLE_CREDENTIALS の JSON デコードに失敗しました: {e}")
-
-# --- Google Sheets 認証セットアップ ---
-creds = service_account.Credentials.from_service_account_info(
-    info,
-    scopes=[
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ],
-)
+# --- Application Default Credentials で認証 ---
+creds, _ = default(scopes=[
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+])
 service = build("sheets", "v4", credentials=creds)
 
 # Step 1: Googleフォーム回答を取得
