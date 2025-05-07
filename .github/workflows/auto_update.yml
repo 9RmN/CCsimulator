@@ -37,15 +37,16 @@ jobs:
           ${{ secrets.GOOGLE_CREDENTIALS }}
           EOF
 
-      # 5. データ生成＆認証ファイル生成
+          # 5. データ生成＆認証ファイル生成
       - name: Generate Data & Auth
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_APPLICATION_CREDENTIALS: service_account.json
-          PEPPER: ${{ secrets.PEPPER }}
++         PEPPER:            ${{ secrets.PEPPER }}
         run: |
           python -u generate_auth.py 2>&1 | tee auth_debug.log
-          python -u update_all.py 2>&1 | tee update_all.log
+          python -u update_all.py     2>&1 | tee update_all.log
+
 
       # 6. 生成された CSV と auth.csv をコミット＆プッシュ
       - name: Commit CSVs
