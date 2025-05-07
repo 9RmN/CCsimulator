@@ -14,13 +14,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
           persist-credentials: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
@@ -28,19 +26,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Set up Google Credentials
-        run: |
-          cat << 'EOF' > service_account.json
-          ${{ secrets.GOOGLE_CREDENTIALS }}
-          EOF
+        run: echo "${{ secrets.GOOGLE_CREDENTIALS }}" > service_account.json
 
       - name: Generate Data & Auth
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_APPLICATION_CREDENTIALS: service_account.json
-          PEPPER: ${{ secrets.PEPPER }}
-        run: |
-          python -u generate_auth.py 2>&1 | tee auth_debug.log
-          python -u update_all.py     2>&1 | tee update_all.log
+        run: python update_all.py
 
       - name: Commit CSVs
         env:
@@ -57,13 +49,4 @@ jobs:
                   department_summary.csv \
                   auth.csv
           git commit -m "chore: auto-update data [skip ci]" || echo "No changes to commit"
-          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main
-
-      - name: Upload debug logs
-        if: failure()
-        uses: actions/upload-artifact@v3
-        with:
-          name: debug-logs
-          path: |
-            auth_debug.log
-            update_all.log
+          git push
