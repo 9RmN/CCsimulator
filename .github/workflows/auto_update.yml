@@ -32,6 +32,7 @@ jobs:
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_APPLICATION_CREDENTIALS: service_account.json
+          PEPPER:               ${{ secrets.PEPPER }}
         run: python update_all.py
 
       - name: Commit CSVs
