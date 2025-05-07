@@ -11,9 +11,8 @@ SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 if not SPREADSHEET_ID:
     raise RuntimeError("環境変数 SPREADSHEET_ID が設定されていません。")
 
+# Pepper は optional: 認証ファイル生成に必要
 PEPPER = os.environ.get("PEPPER")
-if not PEPPER:
-    raise RuntimeError("環境変数 PEPPER が設定されていません。")
 
 # シート範囲（必要に応じてシート名を調整）
 RANGE_NAME = os.environ.get("RANGE_NAME", "'フォームの回答'!A1:AZ1000")
@@ -55,9 +54,9 @@ try:
             hosp = df2.iloc[:, hcol].fillna("")
             dept = df2.iloc[:, dcol].fillna("")
             combined = (hosp + "-" + dept).str.strip().replace("", pd.NA)
-            output[f"hope_{i}"] = combined
         except Exception:
-            output[f"hope_{i}"] = pd.NA
+            combined = pd.NA
+        output[f"hope_{i}"] = combined
     responses = pd.DataFrame(output)
     before = len(responses)
     responses = responses.drop_duplicates(subset="student_id", keep="last")
@@ -69,23 +68,26 @@ except Exception as e:
     print("❌ responses.csv への変換に失敗:", e)
     exit(1)
 
-# Step 3: auth.csv を生成（generate_auth を統合）
-print("🔐 auth.csv を生成中…")
-auth_source = pd.read_csv("form_responses_final.csv", dtype=str)
-auth_source["student_id"] = auth_source["学生番号"].str.lstrip("0")
-auth_source = auth_source.drop_duplicates(subset="student_id", keep="last")
-rows = []
-for _, row in auth_source.iterrows():
-    sid = row["student_id"]
-    pwd = row.get("パスワード", "")
-    if pd.isna(pwd) or pwd == "":
-        continue
-    hash_hex = hashlib.sha256((pwd + PEPPER).encode("utf-8")).hexdigest()
-    role = "admin" if sid == "22" else "student"
-    rows.append({"student_id": sid, "password_hash": hash_hex, "role": role})
-auth_df = pd.DataFrame(rows, columns=["student_id","password_hash","role"])
-auth_df.to_csv("auth.csv", index=False)
-print("✅ auth.csv を生成しました")
+# Step 3: auth.csv の生成（PEPPER が設定されていない場合はスキップ）
+if PEPPER:
+    print("🔐 auth.csv を生成中…")
+    auth_src = pd.read_csv("form_responses_final.csv", dtype=str)
+    auth_src["student_id"] = auth_src["学生番号"].str.lstrip("0")
+    auth_src = auth_src.drop_duplicates(subset="student_id", keep="last")
+    rows = []
+    for _, row in auth_src.iterrows():
+        sid = row["student_id"]
+        pwd = row.get("パスワード", "")
+        if pd.isna(pwd) or pwd == "":
+            continue
+        hash_hex = hashlib.sha256((pwd + PEPPER).encode("utf-8")).hexdigest()
+        role = "admin" if sid == "22" else "student"
+        rows.append({"student_id": sid, "password_hash": hash_hex, "role": role})
+    auth_df = pd.DataFrame(rows, columns=["student_id", "password_hash", "role"])
+    auth_df.to_csv("auth.csv", index=False)
+    print("✅ auth.csv を生成しました")
+else:
+    print("⚠️ 環境変数 PEPPER が設定されていないため auth.csv の生成をスキップします")
 
 # Step 4: その他スクリプト実行
 scripts = [
