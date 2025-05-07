@@ -1,4 +1,5 @@
-=import os
+#!/usr/bin/env python3
+import os
 import json
 import hashlib
 import pandas as pd
@@ -8,8 +9,7 @@ from googleapiclient.discovery import build
 
 # --- 環境変数 & st.secrets から Pepper 取得 ---
 try:
-    # Streamlit Cloud の st.secrets を優先
-    import streamlit as st  # ensure streamlit is in requirements if used
+    import streamlit as st
     PEPPER = st.secrets["auth"]["pepper"]
     print("ℹ️ PEPPER を st.secrets から読み込みました")
 except Exception:
