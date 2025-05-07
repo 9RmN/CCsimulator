@@ -34,7 +34,7 @@ def load_data():
 
 # --- データロード ---
 prob_df, auth_df, rank_df, terms_df, responses_df = load_data()
-pepper = st.secrets['auth']['pepper']
+pepper = st.secrets['pepper']
 
 def verify_user(sid, pwd):
     if not sid.isdigit():
