@@ -34,7 +34,7 @@ if not st.session_state['authenticated']:
         except FileNotFoundError:
             st.error("auth.csv が見つかりません。管理者用認証データを配置してください。")
             st.stop()
-        pepper = st.secrets["pepper"]
+        pepper = st.secrets["PEPPER"]
         hashed = hashlib.sha256((pwd_input + pepper).encode()).hexdigest()
         row = auth_df[
             (auth_df['student_id'] == sid_input) &
