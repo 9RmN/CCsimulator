@@ -17,9 +17,11 @@ if 'user_id' not in st.session_state:
 
 # --- Pepper の取得 ---
 try:
+    # secrets.toml の [auth] セクションから取得
     PEPPER = st.secrets['auth']['pepper']
-    st.info("🔒 Pepper を st.secrets から読み込みました")
-except Exception:
+    st.info("🔒 Pepper を st.secrets['auth']['pepper'] から読み込みました")
+except KeyError:
+    # フォールバックで環境変数から取得
     PEPPER = os.environ.get('PEPPER')
     if PEPPER:
         st.info("🔒 Pepper を環境変数から読み込みました")
