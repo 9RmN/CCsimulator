@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 
 # --- 環境変数  ---
 SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
-RANGE_NAME    = 'フォームの回答 1!A1:AZ1000'
+RANGE_NAME    = 'フォームの回答!A1:AZ1000'
 SERVICE_ACCOUNT_FILE = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
 
 # Step 1: Googleフォーム回答を取得
