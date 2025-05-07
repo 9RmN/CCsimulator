@@ -2,6 +2,7 @@ import os
 import streamlit as st
 import pandas as pd
 import hashlib
+import altair as alt
 
 # --- Streamlit 自動リフレッシュ ---
 st.markdown(
@@ -15,12 +16,31 @@ if 'authenticated' not in st.session_state:
 if 'user_id' not in st.session_state:
     st.session_state['user_id'] = ''
 
-# --- Pepper の取得 (st.secrets を優先) ---
+# --- Pepper の取得 ---
+# Streamlit secrets.toml の [auth] セクション、もしくはトップレベルに定義された PEPPER を参照
+pepper = None
+# まず [auth] セクション内をチェック
 try:
-    # secrets.toml の [auth] セクションに登録したキー名に合わせて大文字で取得
-    pepper = st.secrets['auth']['PEPPER']
-    st.info("🔒 Pepper を st.secrets['auth']['PEPPER'] から読み込みました")
-except KeyError:
+    pepper = st.secrets['auth'].get('PEPPER')
+    if pepper:
+        st.info("🔒 Pepper を st.secrets['auth']['PEPPER'] から読み込みました")
+except Exception:
+    pass
+# 次にトップレベルの PEPPER をチェック
+if not pepper:
+    try:
+        pepper = st.secrets.get('PEPPER')
+        if pepper:
+            st.info("🔒 Pepper を st.secrets['PEPPER'] から読み込みました")
+    except Exception:
+        pass
+# 最後に環境変数をフォールバック
+if not pepper:
+    pepper = os.environ.get('PEPPER')
+    if pepper:
+        st.info("🔒 Pepper を環境変数から読み込みました")
+# それでもなければエラー
+if not pepper:
     st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
     st.stop()
 
@@ -142,7 +162,6 @@ st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
 median_col = rank_df.columns[1]
 rank_df[median_col] = pd.to_numeric(rank_df[median_col], errors='coerce')
 top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
-import altair as alt
 chart_df = top15.reset_index().rename(
     columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'}
 )
