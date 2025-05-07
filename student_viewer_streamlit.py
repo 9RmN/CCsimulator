@@ -18,17 +18,11 @@ if 'user_id' not in st.session_state:
 
 # --- Pepper の取得 ---
 try:
-    # 管理者アプリと同様に [auth] セクションから読み込む
-    pepper = st.secrets['auth']['pepper']
-    st.info("🔒 Pepper を st.secrets['auth']['pepper'] から読み込みました")
-except Exception:
-    # ローカル環境やトップレベル定義の場合は環境変数を参照
-    pepper = os.environ.get('PEPPER')
-    if pepper:
-        st.info("🔒 Pepper を環境変数から読み込みました")
-    else:
-        st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
-        st.stop()
+    pepper = st.secrets["PEPPER"]
+    st.info("🔒 Pepper を st.secrets['PEPPER'] から読み込みました")
+except KeyError:
+    st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
+    st.stop()
 
 @st.cache_data(ttl=60)
 def load_data():
