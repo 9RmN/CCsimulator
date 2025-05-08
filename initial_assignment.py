@@ -34,7 +34,7 @@ for term_label in TERM_LABELS:
         .sort_values("lottery_order")
     )
 
-    # capacity キー辞書作成
+        # capacity キー辞書作成
     cap_dict = {}
     for _, row in capacity_df.iterrows():
         dept = row["hospital_department"]
@@ -42,9 +42,6 @@ for term_label in TERM_LABELS:
             # 欠損値は 0 とみなす
             val = row[term]
             cap_dict[(dept, term)] = int(val) if not pd.isna(val) else 0
-        dept = row["hospital_department"]
-        for term in capacity_df.columns[1:]:
-            cap_dict[(dept, term)] = int(row[term])
 
     # 各学生の配属
     for _, row in merged.iterrows():
