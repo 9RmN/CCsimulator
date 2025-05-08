@@ -39,6 +39,11 @@ for term_label in TERM_LABELS:
     for _, row in capacity_df.iterrows():
         dept = row["hospital_department"]
         for term in capacity_df.columns[1:]:
+            # 欠損値は 0 とみなす
+            val = row[term]
+            cap_dict[(dept, term)] = int(val) if not pd.isna(val) else 0
+        dept = row["hospital_department"]
+        for term in capacity_df.columns[1:]:
             cap_dict[(dept, term)] = int(row[term])
 
     # 各学生の配属
