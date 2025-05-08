@@ -2,8 +2,8 @@ import pandas as pd
 from collections import defaultdict
 
 # --- 初期配属結果の読み込み ---
-# student_id を文字列で統一
-df = pd.read_csv("initial_assignment_result.csv", dtype={"student_id": str})
+# student_id と term を文字列で統一
+df = pd.read_csv("initial_assignment_result.csv", dtype={"student_id": str, "term": str})
 
 # --- responses と student_terms の読み込み ---
 responses = pd.read_csv("responses.csv", dtype=str)
@@ -20,22 +20,25 @@ for _, row in responses.iterrows():
     sid = str(row["student_id"]).lstrip('0')
     if sid not in student_terms:
         continue
-    terms = student_terms[sid]
+    # student_terms[sid] は {"term_1": "1", ...}
     for i in range(1, MAX_HOPES + 1):
         dept = row.get(f"hope_{i}")
         if pd.isna(dept):
             continue
         # 各 term に対してカウント
-        for term_val in terms.values():
+        for term_val in student_terms[sid].values():
+            # term_val は文字列
             hope_counts[(dept, term_val)][i] += 1
 
 # --- 配属結果集計 ---
+# df['term'] は文字列として読み込み済み
 assigned_counts = (
     df[df["assigned_department"] != "未配属"]
       .groupby(["assigned_department", "term"])  
       .size()
       .reset_index(name="配属数")
 )
+# ここで term は文字列
 
 # --- 希望状況の整形 ---
 hope_records = []
@@ -44,7 +47,7 @@ for (dept, term), ranks in hope_counts.items():
     top_3       = sum(ranks.get(i, 0) for i in range(1, 4))
     hope_records.append({
         "hospital_department": dept,
-        "term": term,
+        "term": term,  # 文字列
         "希望者数": total_hopes,
         "うち第1〜3希望": top_3,
         "第1希望数": ranks.get(1, 0),
