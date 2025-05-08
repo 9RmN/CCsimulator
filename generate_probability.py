@@ -6,7 +6,7 @@ from collections import defaultdict
 def main():
     parser = argparse.ArgumentParser(description="Monte Carlo simulation for assignment probabilities")
     parser.add_argument('--iterations', type=int, default=20,
-                        help='Number of Monte Carlo simulations (default: 20)')
+                        help='Number of Monte Carlo simulations (default: 30)')
     args = parser.parse_args()
     N = args.iterations
 
