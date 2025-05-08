@@ -18,11 +18,17 @@ if 'user_id' not in st.session_state:
 
 # --- Pepper の取得 ---
 try:
-    pepper = st.secrets["PEPPER"]
-    st.info("🔒 Pepper を st.secrets['PEPPER'] から読み込みました")
-except KeyError:
-    st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
-    st.stop()
+    # Streamlit Cloud の secrets.toml の [auth] セクションから
+    PEPPER = st.secrets['auth']['pepper']
+    st.info("🔒 Pepper を st.secrets['auth']['pepper'] から読み込みました")
+except Exception:
+    # ローカル環境では環境変数からフォールバック
+    PEPPER = os.environ.get('PEPPER')
+    if PEPPER:
+        st.info("🔒 Pepper を環境変数から読み込みました")
+    else:
+        st.error("いまバグが発生しています。復旧作業中です！")
+        st.stop()
 
 @st.cache_data(ttl=60)
 def load_data():
@@ -65,11 +71,11 @@ def verify_user(sid, pwd):
         return False
     row = auth_df[
         (auth_df['student_id'] == sid) &
-        (auth_df['role'].isin(['student', 'admin']))
+        (auth_df['role'].isin(['student','admin']))
     ]
     if row.empty:
         return False
-    hashed = hashlib.sha256((pwd + pepper).encode()).hexdigest()
+    hashed = hashlib.sha256((pwd + PEPPER).encode()).hexdigest()
     return hashed == row.iloc[0]['password_hash']
 
 # --- ログイン画面 ---
@@ -151,10 +157,13 @@ chart_df = top15.reset_index().rename(
 top15_df = chart_df.sort_values('抽選順位中央値')
 chart = alt.Chart(top15_df).mark_bar().encode(
     x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
-    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
+    y=alt.Y('診療科:N',
+            sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'),
+            title=None)
 ).properties(height=400)
 text = alt.Chart(top15_df).mark_text(align='left', dx=3, baseline='middle').encode(
-    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending')),
+    y=alt.Y('診療科:N',
+            sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending')),
     x=alt.X('抽選順位中央値:Q'),
     text=alt.Text('抽選順位中央値:Q')
 )
