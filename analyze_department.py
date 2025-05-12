@@ -23,7 +23,11 @@ for _, row in responses.iterrows():
     # student_terms[sid] は {"term_1": "1", ...}
     for i in range(1, MAX_HOPES + 1):
         dept = row.get(f"hope_{i}")
+        # 欠損値スキップ
         if pd.isna(dept):
+            continue
+        # 単なる "-"（空結合結果）はスキップ
+        if str(dept).strip() == "-":
             continue
         # 各 term に対してカウント
         for term_val in student_terms[sid].values():
@@ -38,7 +42,6 @@ assigned_counts = (
       .size()
       .reset_index(name="配属数")
 )
-# ここで term は文字列
 
 # --- 希望状況の整形 ---
 hope_records = []
