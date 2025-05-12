@@ -1,22 +1,26 @@
-
 import pandas as pd
 import random
 from collections import defaultdict
 
-responses_base = pd.read_csv("responses.csv")
-lottery = pd.read_csv("lottery_order.csv")
-capacity_df = pd.read_csv("department_capacity.csv")
-terms_df = pd.read_csv("student_terms.csv")
+# --- データ読み込み ---
+responses_base = pd.read_csv("responses.csv", dtype=str)
+lottery        = pd.read_csv("lottery_order.csv", dtype=str)
+capacity_df    = pd.read_csv("department_capacity.csv")
+terms_df       = pd.read_csv("student_terms.csv", dtype=str)
+
+# --- フラグ追加: 実データは is_imputed=False ---
+responses_base['is_imputed'] = False
 
 hope_columns = [col for col in responses_base.columns if col.startswith("hope_")]
-MAX_HOPES = max([int(col.split("_")[1]) for col in hope_columns])
-TERM_LABELS = ["term_1", "term_2", "term_3", "term_4"]
+MAX_HOPES    = max(int(col.split("_")[1]) for col in hope_columns)
+TERM_LABELS  = ["term_1", "term_2", "term_3", "term_4"]
 
-answered_ids = set(responses_base["student_id"])
-all_ids = set(terms_df["student_id"])
+answered_ids   = set(responses_base["student_id"])
+all_ids        = set(terms_df["student_id"])
 unanswered_ids = list(all_ids - answered_ids)
-unanswered_df = lottery[lottery["student_id"].isin(unanswered_ids)]
+unanswered_df  = lottery[lottery["student_id"].isin(unanswered_ids)]
 
+# --- 人気スコア計算 ---
 def calculate_popularity(responses):
     popularity = defaultdict(int)
     for i in range(1, MAX_HOPES + 1):
@@ -27,6 +31,7 @@ def calculate_popularity(responses):
 
 popularity = calculate_popularity(responses_base)
 
+# --- 未回答者の希望を生成 ---
 def generate_unanswered(popularity, unanswered_df):
     total = sum(popularity.values())
     department_prob = {k: v / total for k, v in popularity.items()}
@@ -36,9 +41,9 @@ def generate_unanswered(popularity, unanswered_df):
 
     for sid in unanswered_df["student_id"]:
         hopes = random.choices(depts, weights=weights, k=MAX_HOPES)
-        row = {'student_id': sid}
-        for i, dept in enumerate(hopes):
-            row[f"hope_{i+1}"] = dept
+        row = {'student_id': sid, 'is_imputed': True}
+        for i, dept in enumerate(hopes, start=1):
+            row[f"hope_{i}"] = dept
         generated_rows.append(row)
 
     return pd.DataFrame(generated_rows)
@@ -49,10 +54,12 @@ if unanswered_df.empty:
 else:
     print(f"⚠️ 未回答者 {len(unanswered_df)}名、人気スコアから希望生成")
     generated = generate_unanswered(popularity, unanswered_df)
-    generated["student_id"] = unanswered_df["student_id"].values
+    # student_id は既にセット
     responses_all = pd.concat([responses_base, generated], ignore_index=True)
 
+# --- 配属シミュレーション ---
 assignment_result = []
+# capacity 辞書作成
 cap_dict = {}
 for _, row in capacity_df.iterrows():
     dept = row["hospital_department"]
@@ -87,6 +94,7 @@ for term_label in TERM_LABELS:
                 })
                 assigned_depts.add(dept)
                 student_assigned_departments[sid] = assigned_depts
+                assigned = True
                 break
 
         if not assigned:
@@ -97,6 +105,7 @@ for term_label in TERM_LABELS:
                 "hope_rank": None
             })
 
+# --- 結果保存 ---
 df_result = pd.DataFrame(assignment_result)
 df_result.to_csv("assignment_with_unanswered.csv", index=False)
 print("✅ 未回答含む配属（1人1科1term制約付き）完了")
