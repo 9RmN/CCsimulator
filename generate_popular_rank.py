@@ -1,42 +1,39 @@
 # generate_popular_rank.py
+
 import pandas as pd
 import numpy as np
 
 def weighted_median(values, weights):
-    # values: numpy array, weights: numpy array
     idx = np.argsort(values)
-    sorted_vals = values[idx]
-    sorted_w    = weights[idx]
-    cumw = np.cumsum(sorted_w)
-    cutoff = sorted_w.sum() / 2
-    return sorted_vals[cumw >= cutoff][0]
+    vs = values[idx]
+    ws = weights[idx]
+    cumw = np.cumsum(ws)
+    cutoff = ws.sum() / 2
+    return vs[cumw >= cutoff][0]
 
 def main():
-    # 全体の回答率を算出
-    responses = pd.read_csv("responses.csv", dtype=str)
-    terms_df  = pd.read_csv("student_terms.csv", dtype=str)
-    answered = set(responses['student_id'])
-    total_students = len(terms_df)
-    answered_ratio  = len(answered) / total_students
+    # --- 回答率計算 ---
+    responses     = pd.read_csv("responses.csv",    dtype=str)
+    terms_df      = pd.read_csv("student_terms.csv",dtype=str)
+    answered      = set(responses['student_id'])
+    answered_ratio = len(answered) / len(terms_df)
 
-    # 割当結果と抽選順位を読み込む
-    assign_df  = pd.read_csv("assignment_with_unanswered.csv", dtype=str)
-    lottery_df = pd.read_csv("lottery_order.csv",                dtype=str)
-
-    # 実データ vs 補完データ をフラグで判定
+    # --- 割当結果と抽選順位読み込み ---
+    assign_df    = pd.read_csv("assignment_with_unanswered.csv", dtype=str)
+    lottery_df   = pd.read_csv("lottery_order.csv",               dtype=str)
+    # lottery_order をマージ＆数値化
+    assign_df['lottery_order'] = assign_df['student_id']\
+        .map(lottery_df.set_index('student_id')['lottery_order'])\
+        .astype(int)
+    # 補完判定フラグ
     assign_df['is_imputed'] = ~assign_df['student_id'].isin(answered)
 
-    # マージして weighted median を算出
-    merged = assign_df.merge(lottery_df, on='student_id')
-    # lottery_order を数値化
-    merged['lottery_order'] = merged['lottery_order'].astype(int)
-
+    # --- 部門ごとに weighted median を計算 ---
     records = []
-    for dept, grp in merged.groupby('assigned_department'):
+    for dept, grp in assign_df.groupby('assigned_department'):
         vals = grp['lottery_order'].to_numpy()
-        # 各行の重み：実回答は1.0、補完はanswered_ratio
-        w = np.where(grp['is_imputed'], answered_ratio, 1.0)
-        med = weighted_median(vals, w)
+        ws   = np.where(grp['is_imputed'], answered_ratio, 1.0)
+        med  = weighted_median(vals, ws)
         records.append({
             'assigned_department': dept,
             '抽選順位中央値': med
