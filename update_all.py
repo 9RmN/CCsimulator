@@ -107,8 +107,18 @@ scripts = [
     "analyze_assignment.py",
     "analyze_department.py"
 ]
+
 for script in scripts:
-    print(f"⚙️ {script} を実行中...")
-    subprocess.run(["python", script], check=True)
+    if script == "generate_probability.py":
+        print(f"⚙️ {script} (iterations=5) を実行中…")
+        subprocess.run(
+            ["python", script, "--iterations", "5"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+    else:
+        print(f"⚙️ {script} を実行中…")
+        subprocess.run(["python", script], check=True)
 
 print("\n✅ 全パイプライン実行完了！")
