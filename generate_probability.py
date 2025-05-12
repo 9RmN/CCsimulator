@@ -6,8 +6,8 @@ from simulate_with_unanswered import run_simulation  # 関数化済みと仮定
 
 def main():
     parser = argparse.ArgumentParser(description="Monte Carlo simulation for assignment probabilities")
-    parser.add_argument('--iterations', type=int, default=40,
-                        help='Number of Monte Carlo simulations (default: 40)')
+    parser.add_argument('--iterations', type=int, default=100,
+                        help='Number of Monte Carlo simulations (default: 100)')
     args = parser.parse_args()
     N = args.iterations
 
