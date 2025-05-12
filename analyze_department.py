@@ -20,26 +20,20 @@ for _, row in responses.iterrows():
     sid = str(row["student_id"]).lstrip('0')
     if sid not in student_terms:
         continue
-    # student_terms[sid] は {"term_1": "1", ...}
     for i in range(1, MAX_HOPES + 1):
         dept = row.get(f"hope_{i}")
-        # 欠損値スキップ
         if pd.isna(dept):
             continue
-        # 単なる "-"（空結合結果）はスキップ
-        if str(dept).strip() == "-":
+        text = str(dept).strip()
+        if text == "-" or text == "":
             continue
-        # 各 term に対してカウント
         for term_val in student_terms[sid].values():
-            # term_val は文字列
             hope_counts[(dept, term_val)][i] += 1
 
 # --- 配属結果集計 ---
-# df['term'] は文字列として読み込み済み
 assigned_counts = (
     df[df["assigned_department"] != "未配属"]
-      .groupby(["assigned_department", "term"])  
-      .size()
+      .groupby(["assigned_department", "term"]).size()
       .reset_index(name="配属数")
 )
 
@@ -50,7 +44,7 @@ for (dept, term), ranks in hope_counts.items():
     top_3       = sum(ranks.get(i, 0) for i in range(1, 4))
     hope_records.append({
         "hospital_department": dept,
-        "term": term,  # 文字列
+        "term": term,
         "希望者数": total_hopes,
         "うち第1〜3希望": top_3,
         "第1希望数": ranks.get(1, 0),
@@ -69,8 +63,13 @@ summary = pd.merge(
 )
 summary["配属数"] = summary["配属数"].fillna(0).astype(int)
 summary = summary.drop(columns=["assigned_department"])
-# 日本語列名へ
 summary = summary.rename(columns={"hospital_department": "病院-診療科"})
+
+# --- 不要データの除外 ---
+# ハイフンのみ、もしくは空文字を含む行を削除
+parts = summary['病院-診療科'].str.split('-', n=1, expand=True)
+mask = parts[0].str.strip().ne('') & parts[1].str.strip().ne('')
+summary = summary[mask]
 
 # CSV 出力
 summary.to_csv("department_summary.csv", index=False)
