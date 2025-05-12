@@ -2,84 +2,56 @@ import pandas as pd
 import random
 from collections import defaultdict
 
-def simulate_self_flat(student_id, num_simulations=100):
-    responses_df = pd.read_csv("responses.csv", dtype={'student_id': str})
-    lottery_df = pd.read_csv("lottery_order.csv", dtype={'student_id': str})
-    capacity_df = pd.read_csv("department_capacity.csv")
-    terms_df = pd.read_csv("student_terms.csv", dtype={'student_id': str})
+def simulate_self_flat(student_id):
+    # 各種データ読み込み
+    responses = pd.read_csv("responses.csv", dtype={'student_id': str})
+    lottery = pd.read_csv("lottery_order.csv", dtype={'student_id': str})
+    capacity = pd.read_csv("department_capacity.csv")
+    terms = pd.read_csv("student_terms.csv", dtype={'student_id': str})
 
-    MAX_HOPES = 20
-    popularity = defaultdict(int)
-
-    for i in range(1, MAX_HOPES + 1):
-        col = f"hope_{i}"
-        if col in responses_df.columns:
-            w = MAX_HOPES + 1 - i
-            for dept in responses_df[col].dropna():
-                if isinstance(dept, str) and dept.strip() and dept.strip() != "-":
-                    popularity[dept.strip()] += w
-
-    if not popularity:
-        print("⚠️ popularity_score が空です。")
+    # 学生のterm情報取得
+    terms_row = terms[terms["student_id"] == student_id]
+    if terms_row.empty:
         return {}
 
-    depts, weights = zip(*[(d, v / sum(popularity.values())) for d, v in popularity.items()])
-    count_dict = defaultdict(int)
+    term_list = [terms_row[f"term_{i}"].values[0] for i in range(1, 5)]
+    response_row = responses[responses["student_id"] == student_id]
+    if response_row.empty:
+        return {}
 
-    for sim in range(num_simulations):
-        answered_ids = set(responses_df['student_id'])
-        all_ids = set(terms_df['student_id'])
-        unresp_ids = list(all_ids - answered_ids)
+    # 希望診療科リスト作成（NaNと'-'を除く）
+    hopes = [response_row[f"hope_{i}"].values[0] for i in range(1, 21)
+             if f"hope_{i}" in response_row.columns and
+                pd.notna(response_row[f"hope_{i}"].values[0]) and
+                response_row[f"hope_{i}"].values[0].strip() != "-"]
+    hopes = list(dict.fromkeys(hopes))  # 重複除去
 
-        gen_rows = []
-        for sid in unresp_ids:
-            row = {"student_id": sid}
-            picks = random.choices(depts, weights=weights, k=MAX_HOPES)
-            for i in range(1, MAX_HOPES + 1):
-                row[f"hope_{i}"] = picks[i - 1]
-            gen_rows.append(row)
-        gen_df = pd.DataFrame(gen_rows)
+    if not hopes:
+        return {}
 
-        base_df = pd.concat([responses_df, gen_df], ignore_index=True)
-        base_df = base_df.copy()
-        base_df['student_id'] = base_df['student_id'].astype(str)
+    # 実行回数
+    N = 300
+    counter = {h: 0 for h in hopes}
 
-        self_row = responses_df[responses_df["student_id"] == student_id]
-        if self_row.empty:
-            continue
+    for _ in range(N):
+        assigned = {}
+        cap = {}
+        for _, row in capacity.iterrows():
+            dept = row["hospital_department"]
+            for t in range(1, 12):
+                cap[(dept, f"term_{t}")] = row[f"term_{t}"]
 
-        hopes = []
-        for i in range(1, MAX_HOPES + 1):
-            col = f"hope_{i}"
-            if col in self_row.columns:
-                val = self_row.iloc[0][col]
-                if isinstance(val, str) and val.strip() and val.strip() != "-":
-                    hopes.append(val.strip())
-        if not hopes:
-            continue
-
-        self_terms = terms_df[terms_df["student_id"] == student_id].iloc[0]
-        base_df = base_df[base_df["student_id"] != student_id]
-
-        assignments = {}
-        used = set()
-        for t in range(1, 5):
-            term_col = f"term_{t}"
-            term_val = self_terms[term_col]
-            random.shuffle(hopes)
+        for idx, term in enumerate(term_list):
             for dept in hopes:
-                if dept in used:
-                    continue
-                term_key = f"term_{term_val}"
-                cap_row = capacity_df[capacity_df["hospital_department"] == dept]
-                if not cap_row.empty and term_key in cap_row.columns:
-                    if cap_row[term_key].values[0] > 0:
-                        assignments[term_key] = dept
-                        used.add(dept)
-                        break
+                key = (dept, f"term_{term}")
+                if cap.get(key, 0) > 0 and dept not in assigned.values():
+                    cap[key] -= 1
+                    assigned[f"term_{term}"] = dept
+                    counter[dept] += 1
+                    break
+            else:
+                assigned[f"term_{term}"] = "未配属"
 
-        for dept in assignments.values():
-            count_dict[dept] += 1
-
-    result = {dept: round(count / num_simulations * 100, 1) for dept, count in count_dict.items()}
+    # 通過確率計算
+    result = {dept: (count / N * 100) for dept, count in counter.items()}
     return result
