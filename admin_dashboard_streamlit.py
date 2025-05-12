@@ -123,7 +123,7 @@ if assign_matrix is not None:
 else:
     st.warning("assignment_matrix.csv が見つかりません。生成後、再デプロイしてください。")
 
-st.subheader("部門サマリ（希望者数・定員・配属数・中央値）")
+st.subheader("部門ごとの第1-3希望に入れた人の数")
 if dept_summary is not None:
     st.dataframe(dept_summary, use_container_width=True)
 else:
