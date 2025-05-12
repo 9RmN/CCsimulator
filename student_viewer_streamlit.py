@@ -110,10 +110,7 @@ for i in range(1, 21):
     if not hope or pd.isna(hope):
         continue
     prob = prob_df.loc[sid].get(f"hope_{i}_確率") if sid in prob_df.index else None
-    if prob is None or pd.isna(prob):
-        label = ""
-    else:
-        label = f"{prob:.0f}%"
+    label = f"{int(prob)}%" if pd.notna(prob) else ""
     display.append({
         '希望順位': f"第{i}希望: {hope}",
         '通過確率': label
@@ -134,13 +131,18 @@ def color_prob(val):
         pass
     return ''
 
-if '通過確率' in df_disp.columns:
-    st.dataframe(
-        df_disp.style.map(color_prob, subset=['通過確率']),
-        use_container_width=True
-    )
-else:
-    st.dataframe(df_disp, use_container_width=True)
+st.dataframe(
+    df_disp.style.map(color_prob, subset=['通過確率']),
+    use_container_width=True
+)
+
+# 1〜3希望人数テーブル表示
+st.subheader("📋 第1～3希望人数 (科ごと・Term1～Term11)")
+try:
+    dept_summary = pd.read_csv("department_summary.csv", index_col=0)
+    st.dataframe(dept_summary, use_container_width=True)
+except FileNotFoundError:
+    st.warning("department_summary.csv が見つかりません。管理者に連絡してください。")
 
 # 人気診療科トップ15表示
 st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
@@ -162,9 +164,3 @@ text = alt.Chart(chart_df).mark_text(align='left', dx=3, baseline='middle').enco
 )
 
 st.altair_chart(chart + text, use_container_width=True)
-
-st.subheader("部門ごとの第1-3希望に入れた人の数")
-if dept_summary is not None:
-    st.dataframe(dept_summary, use_container_width=True)
-else:
-    st.warning("department_summary.csv が見つかりません。生成後、再デプロイしてください。")
