@@ -43,7 +43,6 @@ if not values:
     print("❌ データが取得できませんでした")
     exit(1)
 
-# DataFrame 生成 & 保存
 df = pd.DataFrame(values[1:], columns=values[0])
 df.to_csv("form_responses_final.csv", index=False)
 print("✅ form_responses_final.csv を保存しました")
@@ -110,9 +109,16 @@ scripts = [
 
 for script in scripts:
     if script == "generate_probability.py":
-        print(f"⚙️ {script} (iterations=5) を実行中…")
+        print(f"⚙️ {script} (iterations=5) を実行中…（詳細ログを表示）")
+        # 一時的にログ出力を有効にしてデバッグ
         subprocess.run(
             ["python", script, "--iterations", "5"],
+            check=True
+        )
+    elif script == "simulate_with_unanswered.py":
+        print(f"⚙️ {script} をサイレント実行中…")
+        subprocess.run(
+            ["python", script],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True
