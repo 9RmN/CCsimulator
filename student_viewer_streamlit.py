@@ -162,3 +162,9 @@ text = alt.Chart(chart_df).mark_text(align='left', dx=3, baseline='middle').enco
 )
 
 st.altair_chart(chart + text, use_container_width=True)
+
+st.subheader("部門ごとの第1-3希望に入れた人の数")
+if dept_summary is not None:
+    st.dataframe(dept_summary, use_container_width=True)
+else:
+    st.warning("department_summary.csv が見つかりません。生成後、再デプロイしてください。")
