@@ -1,9 +1,20 @@
 # simulate_each_as_first.py
 import pandas as pd
+import numpy as np
 import random
 from collections import defaultdict
 
 N_SIMULATIONS = 100
+
+def compute_softmax_probs(scores: np.ndarray, temperature: float = 1.0) -> np.ndarray:
+    """
+    scores: shape (M,) の生スコア配列
+    temperature: 小さいほど分布が鋭く、大きいほど均等に近づく
+    """
+    z = scores / temperature
+    z = z - np.max(z)        # 数値安定化
+    exp_z = np.exp(z)
+    return exp_z / exp_z.sum()
 
 def simulate_each_as_first(student_id):
     # --- データ読込 ---
@@ -18,11 +29,12 @@ def simulate_each_as_first(student_id):
         raise ValueError("student_id が responses.csv に存在しません")
     hopes = self_row.iloc[0].drop(labels="student_id").dropna().unique()
     hopes = [h for h in hopes if h != "-" and h != ""]
-
     if not hopes:
         raise ValueError("希望が入力されていません")
 
-    my_terms = terms[terms["student_id"] == student_id].iloc[0][["term_1", "term_2", "term_3", "term_4"]].values
+    my_terms = terms[terms["student_id"] == student_id].iloc[0][
+        ["term_1", "term_2", "term_3", "term_4"]
+    ].values
 
     lottery_row = lottery[lottery["student_id"] == student_id]
     if lottery_row.empty:
@@ -36,21 +48,29 @@ def simulate_each_as_first(student_id):
     MAX_HOPES = 20
     for i in range(1, MAX_HOPES + 1):
         w = MAX_HOPES + 1 - i
-        if f"hope_{i}" in others.columns:
-            for dept in others[f"hope_{i}"].dropna():
+        col = f"hope_{i}"
+        if col in others.columns:
+            for dept in others[col].dropna():
                 if dept != "-" and dept != "":
                     popularity[dept] += w
 
+    # 未回答者抽出
     answered_ids = set(others["student_id"])
     all_ids = set(terms["student_id"])
     unanswered_ids = list(all_ids - answered_ids - {student_id})
-    unanswered_df = lottery[lottery["student_id"].isin(unanswered_ids)]
+    unanswered_df = pd.DataFrame({'student_id': unanswered_ids})
 
-    depts, weights = zip(*[(d, v / sum(popularity.values())) for d, v in popularity.items()])
+    # --- Softmax＋温度付きサンプリング ---
+    dept_list = list(popularity.keys())
+    raw_scores = np.array([popularity[d] for d in dept_list], dtype=float)
+    temperature = 0.5  # 調整可能
+    probs = compute_softmax_probs(raw_scores, temperature)
+
     generated_rows = []
     for uid in unanswered_df["student_id"]:
         row = {"student_id": uid}
-        picks = random.choices(depts, weights=weights, k=MAX_HOPES)
+        # replace=False で重複なくサンプリング
+        picks = np.random.choice(dept_list, size=MAX_HOPES, replace=False, p=probs)
         for i, dept in enumerate(picks, 1):
             row[f"hope_{i}"] = dept
         generated_rows.append(row)
@@ -61,10 +81,8 @@ def simulate_each_as_first(student_id):
 
     # --- 各希望科を第1希望にしたシミュレーション ---
     result = []
-
     for target_dept in hopes:
         success_count = 0
-
         for _ in range(N_SIMULATIONS):
             # 容量初期化
             cap = {}
@@ -95,7 +113,7 @@ def simulate_each_as_first(student_id):
                             student_assigned[sid] = used
                             break
 
-            # 自分が target_dept を第1希望として提出したと仮定して割り当て
+            # 自分が target_dept を第1希望として割り当て
             for term in my_terms:
                 key = (target_dept, f"term_{term}")
                 if cap.get(key, 0) > 0:
