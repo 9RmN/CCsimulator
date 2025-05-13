@@ -33,10 +33,13 @@ def load_data():
     terms_df = pd.read_csv("student_terms.csv", dtype={'student_id': str})
     responses_df = pd.read_csv("responses.csv", dtype={'student_id': str})
 
-    # 正規化
-    for df in [responses_df, prob_df, terms_df]:
+    for df in [responses_df, prob_df, terms_df, auth_df]:
         df['student_id'] = df['student_id'].str.lstrip('0')
-        df.set_index('student_id', inplace=True)
+
+    responses_df.set_index('student_id', inplace=True)
+    prob_df.set_index('student_id', inplace=True)
+    terms_df.set_index('student_id', inplace=True)
+    auth_df.set_index('student_id', inplace=True)
 
     return prob_df, auth_df, rank_df, terms_df, responses_df
 
@@ -44,13 +47,16 @@ prob_df, auth_df, rank_df, terms_df, responses_df = load_data()
 
 # --- 認証 ---
 def verify_user(sid, pwd):
+    sid = sid.lstrip('0')
     if not sid.isdigit():
         return False
-    row = auth_df[(auth_df.index == sid) & (auth_df['role'].isin(['student','admin']))]
-    if row.empty:
+    if sid not in auth_df.index:
+        return False
+    row = auth_df.loc[sid]
+    if row['role'] not in ['student', 'admin']:
         return False
     hashed = hashlib.sha256((pwd + PEPPER).encode()).hexdigest()
-    return hashed == row.iloc[0]['password_hash']
+    return hashed == row['password_hash']
 
 if not st.session_state['authenticated']:
     st.title("🔐 ログイン")
@@ -59,15 +65,11 @@ if not st.session_state['authenticated']:
     if st.button("ログイン"):
         if verify_user(sid, pwd):
             st.session_state['authenticated'] = True
-            st.session_state['user_id'] = sid
-            st.success(f"認証成功: 学生番号={sid}")
+            st.session_state['user_id'] = sid.lstrip('0')
+            st.success(f"認証成功: 学生番号={sid.lstrip('0')}")
         else:
             st.error("学生番号またはパスワードが間違っています")
     st.stop()
-
-st.write(f"入力された学籍番号: {sid}")
-st.write(f"auth_df.index のサンプル: {auth_df.index[:5].tolist()}")
-st.write(f"照合結果: {sid in auth_df.index}")
 
 # --- 認証後画面 ---
 sid = st.session_state['user_id']
