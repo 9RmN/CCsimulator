@@ -160,9 +160,27 @@ chart_df = top15.reset_index().rename(columns={rank_df.columns[0]: '診療科', 
 base_chart = alt.Chart(chart_df).mark_bar().encode(
     x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
     y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
-).properties(width=700, height=max(300, len(chart_df)*25))
-text = base_chart.mark_text(align='left', baseline='middle', dx=3).encode(text=alt.Text('抽選順位中央値:Q'))
-layered = alt.layer(base_chart, text).configure_axis(labelFontSize=12, titleFontSize=14, labelAngle=0, labelAlign='right')
+).properties(
+    width=800,  # 幅を広げて名称を表示
+    height=len(chart_df) * 30  # 行数に応じて高さを調整
+)
+
+text = base_chart.mark_text(align='left', baseline='middle', dx=3).encode(
+    text=alt.Text('抽選順位中央値:Q', format='.0f')
+)
+
+# Y軸ラベルを省略せず表示するためにラベル制限を解除
+layered = alt.layer(base_chart, text)
+layered = layered.configure_axisX(
+    labelFontSize=12, titleFontSize=14
+).configure_axisY(
+    labelFontSize=12,
+    titleFontSize=14,
+    labelAngle=0,
+    labelAlign='left',
+    labelLimit=300
+)
+
 st.altair_chart(layered, use_container_width=True)
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
