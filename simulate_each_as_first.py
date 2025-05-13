@@ -74,7 +74,7 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
             }
 
             # full_responses に自分のダミー行を追加
-            dummy = {{'student_id': student_id}}
+            dummy = {'student_id': student_id}
             for c in hope_cols:
                 dummy[c] = ''
             dummy[hope_cols[0]] = target
@@ -110,7 +110,7 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
                                 success += 1
                                 assigned_flag = True
                             break
-                    if assigned_flag or (sid == student_id and assigned_flag):
+                    if assigned_flag:
                         break
                 if assigned_flag:
                     break
