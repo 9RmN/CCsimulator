@@ -184,9 +184,15 @@ cap_dept = (
     .rename(columns={'hospital_department':'department'})
 )
 
-# 上限に達したdeptのみ抽出
-depts_full = assign_dept.merge(cap_dept, on='department')
-reached_depts = depts_full[depts_full['assigned_count'] >= depts_full['capacity']]['department']
+# 上限に達したdeptのみ抽出（しきい値によるフィルタリング）
+# capacity の阈値スライダー（例：70%）
+threshold = st.slider(
+    "配属枠の何%以上が埋まった科を表示するか", min_value=0.0, max_value=1.0, value=0.7, step=0.05
+)
+# 指定割合以上埋まっている科を抽出
+reached_depts = depts_full[
+    depts_full['assigned_count'] >= depts_full['capacity'] * threshold
+]['department']
 
 # 対象deptのlottery_order最大値を取得
 max_rank = (
