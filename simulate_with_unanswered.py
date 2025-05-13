@@ -14,7 +14,7 @@ def run_simulation(responses_base: pd.DataFrame,
                    capacity_df: pd.DataFrame,
                    terms_df: pd.DataFrame,
                    hist_df: pd.DataFrame,
-                   temperature: float = 0.5,
+                   temperature: float = 2.0,
                    alpha: float = 0.7,
                    beta: float = 0.3) -> pd.DataFrame:
     # --- popularity スコア計算（回答ベース）---
