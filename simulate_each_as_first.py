@@ -4,7 +4,18 @@ import random
 from collections import defaultdict
 
 # モンテカルロ回数
-N_SIMULATIONS = 50
+N_SIMULATIONS = 50  # 少ない回数でもばらつきを得るため
+# Softmax 温度パラメータ
+TEMPERATURE = 3.0
+# 並び順ジッター（倍率）
+JITTER_SCALE = 0.05
+
+def softmax(x, temperature=1.0):
+    """Softmax 関数（温度付き）"""
+    arr = np.array(x, dtype=float) / temperature
+    e = np.exp(arr - np.max(arr))
+    return (e / e.sum()).tolist()
+
 
 def simulate_each_as_first(student_id: str) -> pd.DataFrame:
     """
@@ -37,8 +48,9 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
             if d and d != '-':
                 pop[d] += weight
     dept_list, counts = zip(*pop.items())
-    total = sum(counts)
-    weights = [c / total for c in counts]
+
+    # Softmax で確率分布に変換
+    weights = softmax(counts, temperature=TEMPERATURE)
 
     # 未回答者IDリスト
     answered_ids = set(others['student_id'])
@@ -83,12 +95,13 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
             full_responses_sim = pd.concat([others, gen_df, me_dummy], ignore_index=True)
             merged = full_responses_sim.merge(terms_lot, on='student_id')
             merged = merged.copy()
-            merged['_ord'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged)) * 0.01
+            # 並び順に全体ジッターを導入
+            merged['_ord'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged)) * JITTER_SCALE
             merged = merged.sort_values('_ord')
 
             # 割当シミュレーション
-            assigned = {}
             assigned_flag = False
+            assigned = {}
             for _, r in merged.iterrows():
                 sid = r['student_id']
                 used = assigned.get(sid, set())
@@ -104,6 +117,7 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
                         if cap.get(key, 0) > 0:
                             cap[key] -= 1
                             assigned.setdefault(sid, set()).add(dept)
+                            # 自分かつ target 科だったら success カウント
                             if sid == student_id and dept == target:
                                 success += 1
                                 assigned_flag = True
