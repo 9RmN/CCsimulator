@@ -151,10 +151,13 @@ text = (
 st.altair_chart(chart + text, use_container_width=True)
 
 # --- 昨年上限に達した科の最大通過順位 ---
-st.subheader("🔖 昨年：上限に達した科の最大通過順位（バーグラフ）")
+st.subheader("🔖 昨年：配属上限に達した科の最大通過順位（バーグラフ）")
 
+# 昨年データ読み込み
 hist_df = pd.read_csv("2024配属結果.csv", dtype={'student_id': str, 'lottery_order': int})
 cap_df  = pd.read_csv("department_capacity.csv")
+
+# レコード展開
 records = []
 term_cols = [c for c in hist_df.columns if c.startswith("term_")]
 for _, r in hist_df.iterrows():
@@ -163,34 +166,44 @@ for _, r in hist_df.iterrows():
         dept = r[term]
         if pd.notna(dept) and dept not in ("","-"):
             records.append({'department': dept, 'term': term, 'lottery_order': rank})
-
 df_long2 = pd.DataFrame(records)
-assign_counts = (
-    df_long2.groupby(['department','term'], as_index=False)
+
+# departmentごとの昨年配属数合計とcapacity合計
+assign_dept = (
+    df_long2.groupby('department', as_index=False)
             .size().rename(columns={'size':'assigned_count'})
 )
-cap_long = (
-    cap_df.melt(id_vars=['hospital_department'],
-                value_vars=[c for c in cap_df.columns if c.startswith('term_')],
-                var_name='term', value_name='capacity')
-           .rename(columns={'hospital_department':'department'})
+cap_dept = (
+    cap_df.melt(
+        id_vars=['hospital_department'],
+        value_vars=[c for c in cap_df.columns if c.startswith('term_')],
+        var_name='term', value_name='capacity'
+    )
+    .groupby('hospital_department', as_index=False)
+    .agg({'capacity':'sum'})
+    .rename(columns={'hospital_department':'department'})
 )
-cap_long['capacity'] = cap_long['capacity'].fillna(0).astype(int)
-full = assign_counts.merge(cap_long, on=['department','term'])
-reached = full[full['assigned_count'] >= full['capacity']]
-# filter original
-filtered = df_long2.merge(reached[['department','term']], on=['department','term'])
+
+# 上限に達したdeptのみ抽出
+depts_full = assign_dept.merge(cap_dept, on='department')
+reached_depts = depts_full[depts_full['assigned_count'] >= depts_full['capacity']]['department']
+
+# 対象deptのlottery_order最大値を取得
 max_rank = (
-    filtered.groupby('department', as_index=False)['lottery_order']
-            .max().rename(columns={'lottery_order':'昨年の最大通過順位'})
-            .sort_values('昨年の最大通過順位')
+    df_long2[df_long2['department'].isin(reached_depts)]
+    .groupby('department', as_index=False)['lottery_order']
+    .max()
+    .rename(columns={'lottery_order':'昨年の最大通過順位'})
+    .sort_values('昨年の最大通過順位')
 )
+
+# バーグラフ表示
 chart2 = (
     alt.Chart(max_rank)
     .mark_bar()
     .encode(
-        x='昨年の最大通過順位:Q',
-        y=alt.Y('department:N', sort='-x')
+        x=alt.X('昨年の最大通過順位:Q', title='最大通過順位'),
+        y=alt.Y('department:N', sort='-x', title='診療科')
     )
     .properties(width=800, height=max(300, len(max_rank)*20))
 )
