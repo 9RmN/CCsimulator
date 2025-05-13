@@ -1,57 +1,115 @@
+# simulate_self_flat.py
 import pandas as pd
 import random
 from collections import defaultdict
 
+N_SIMULATIONS = 300
+
 def simulate_self_flat(student_id):
-    # 各種データ読み込み
+    # データ読み込み
     responses = pd.read_csv("responses.csv", dtype={'student_id': str})
     lottery = pd.read_csv("lottery_order.csv", dtype={'student_id': str})
-    capacity = pd.read_csv("department_capacity.csv")
     terms = pd.read_csv("student_terms.csv", dtype={'student_id': str})
+    capacity = pd.read_csv("department_capacity.csv")
+    
+    # student_id の希望一覧
+    self_row = responses[responses["student_id"] == student_id]
+    if self_row.empty:
+        raise ValueError("student_id が responses.csv に存在しません")
 
-    # 学生のterm情報取得
-    terms_row = terms[terms["student_id"] == student_id]
-    if terms_row.empty:
-        return {}
+    # 希望一覧（重複除く、空白・"-"除く）
+    hopes = self_row.iloc[0].drop(labels="student_id").dropna().unique()
+    hopes = [h for h in hopes if h != "-" and h != ""]
 
-    term_list = [terms_row[f"term_{i}"].values[0] for i in range(1, 5)]
-    response_row = responses[responses["student_id"] == student_id]
-    if response_row.empty:
-        return {}
+    if len(hopes) == 0:
+        raise ValueError("希望が入力されていません")
 
-    # 希望診療科リスト作成（NaNと'-'を除く）
-    hopes = [response_row[f"hope_{i}"].values[0] for i in range(1, 21)
-             if f"hope_{i}" in response_row.columns and
-                pd.notna(response_row[f"hope_{i}"].values[0]) and
-                response_row[f"hope_{i}"].values[0].strip() != "-"]
-    hopes = list(dict.fromkeys(hopes))  # 重複除去
+    # 自分の term を取得
+    my_terms = terms[terms["student_id"] == student_id].iloc[0][["term_1", "term_2", "term_3", "term_4"]].values
+    my_lottery = int(lottery[lottery["student_id"] == student_id]["lottery_order"].iloc[0])
 
-    if not hopes:
-        return {}
+    # 他学生（自分以外）の responses を取得
+    others = responses[responses["student_id"] != student_id]
 
-    # 実行回数
-    N = 300
-    counter = {h: 0 for h in hopes}
+    # popularity スコア計算
+    popularity = defaultdict(int)
+    MAX_HOPES = 20
+    for i in range(1, MAX_HOPES + 1):
+        w = MAX_HOPES + 1 - i
+        if f"hope_{i}" in others.columns:
+            for dept in others[f"hope_{i}"].dropna():
+                if dept != "-" and dept != "":
+                    popularity[dept] += w
 
-    for _ in range(N):
-        assigned = {}
+    # 未回答者を抽出
+    answered_ids = set(others["student_id"])
+    all_ids = set(terms["student_id"])
+    unanswered_ids = list(all_ids - answered_ids - {student_id})
+    unanswered_df = lottery[lottery["student_id"].isin(unanswered_ids)]
+
+    # popularityから未回答者の希望を生成
+    generated_rows = []
+    depts, weights = zip(*[(d, v / sum(popularity.values())) for d, v in popularity.items()])
+    for uid in unanswered_df["student_id"]:
+        row = {"student_id": uid}
+        picks = random.choices(depts, weights=weights, k=MAX_HOPES)
+        for i, dept in enumerate(picks, 1):
+            row[f"hope_{i}"] = dept
+        generated_rows.append(row)
+    generated = pd.DataFrame(generated_rows)
+
+    # ベース responses を統合
+    full_responses = pd.concat([others, generated], ignore_index=True)
+
+    # 希望ごとの通過回数記録用
+    count = {dept: 0 for dept in hopes}
+
+    for _ in range(N_SIMULATIONS):
+        # term ごとの残数を初期化
         cap = {}
-        for _, row in capacity.iterrows():
-            dept = row["hospital_department"]
-            for t in range(1, 12):
-                cap[(dept, f"term_{t}")] = row[f"term_{t}"]
+        for _, r in capacity.iterrows():
+            dept = r["hospital_department"]
+            for t in capacity.columns[1:]:
+                cap[(dept, t)] = r[t]
 
-        for idx, term in enumerate(term_list):
-            for dept in hopes:
-                key = (dept, f"term_{term}")
-                if cap.get(key, 0) > 0 and dept not in assigned.values():
+        # 各学生の term を展開
+        all_terms = terms.merge(lottery, on="student_id")
+        student_assigned = {}
+
+        # 他学生を抽選順に割り当て
+        merged = full_responses.merge(all_terms, on="student_id").merge(lottery, on="student_id")
+        merged = merged.sort_values("lottery_order")
+        for _, r in merged.iterrows():
+            sid = r["student_id"]
+            term_list = [r[f"term_{i}"] for i in range(1, 5)]
+            used = student_assigned.get(sid, set())
+            for term in term_list:
+                for i in range(1, MAX_HOPES + 1):
+                    d = r.get(f"hope_{i}", "")
+                    if pd.isna(d) or d in used: continue
+                    key = (d, f"term_{term}")
+                    if cap.get(key, 0) > 0:
+                        cap[key] -= 1
+                        used.add(d)
+                        student_assigned[sid] = used
+                        break
+
+        # 自分を順位無視で希望科から割り当て
+        used = set()
+        for term in my_terms:
+            for d in hopes:
+                if d in used: continue
+                key = (d, f"term_{term}")
+                if cap.get(key, 0) > 0:
                     cap[key] -= 1
-                    assigned[f"term_{term}"] = dept
-                    counter[dept] += 1
+                    used.add(d)
+                    count[d] += 1
                     break
-            else:
-                assigned[f"term_{term}"] = "未配属"
 
-    # 通過確率計算
-    result = {dept: (count / N * 100) for dept, count in counter.items()}
+    # 確率に変換
+    result = pd.DataFrame([
+        {"希望科": d, "通過確率（順位無視）": f"{(count[d] / N_SIMULATIONS * 100):.1f}%"}
+        for d in hopes
+    ])
+
     return result
