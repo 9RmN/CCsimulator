@@ -145,7 +145,7 @@ layered = alt.layer(base_chart, text).configure_axis(labelFontSize=12, titleFont
 st.altair_chart(layered, use_container_width=True)
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
-st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位（バーグラフ）")
+st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位")
 # データ読み込み
 hist_df = pd.read_csv("2024配属結果.csv", dtype={'student_id':str, 'lottery_order':int})
 cap_df  = pd.read_csv("department_capacity.csv")
