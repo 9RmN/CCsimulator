@@ -149,7 +149,7 @@ except FileNotFoundError:
     st.warning("department_summary.csv が見つかりません。")
 
 # --- 人気診療科表示 ---
-st.subheader("🔥 人気診療科トップ15")
+st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
 median_col = rank_df.columns[1]
 rank_df[median_col] = pd.to_numeric(rank_df[median_col], errors='coerce')
 top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
@@ -169,7 +169,7 @@ text = alt.Chart(chart_df).mark_text(align='left', dx=3, baseline='middle').enco
 st.altair_chart(chart + text, use_container_width=True)
 
 # --- 昨年上限に達した科の最大通過順位 ---
-st.subheader("🔖 昨年上限に達した科の最大通過順位")
+st.subheader("🔖 昨年：上限に達した科の最大通過順位（バーグラフ）")
 
 hist_df = pd.read_csv("2024配属結果.csv", dtype={'student_id': str, 'lottery_order': int})
 cap_df  = pd.read_csv("department_capacity.csv")
@@ -197,7 +197,8 @@ cap_long = (
     )
     .rename(columns={"hospital_department": "department"})
 )
-cap_long["capacity"] = cap_long["capacity"].astype(int)
+# NaN を 0 に置き換えてから整数化
+cap_long["capacity"] = cap_long["capacity"].fillna(0).astype(int)
 full = assign_counts.merge(cap_long, on=["department","term"])
 reached = full[full["assigned_count"] >= full["capacity"]]
 max_rank = (
