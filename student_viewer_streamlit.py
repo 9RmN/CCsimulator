@@ -155,42 +155,15 @@ st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
 median_col = rank_df.columns[1]
 rank_df[median_col] = pd.to_numeric(rank_df[median_col], errors='coerce')
 top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
-chart_df = top15.reset_index().rename(
-    columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'}
-)
-
-# バーチャート
-chart = (
-    alt.Chart(chart_df)
-    .mark_bar()
-    .encode(
-        y=alt.Y(
-            '診療科:N',
-            sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'),
-            title=None,
-            axis=alt.Axis(labelAngle=0, labelAlign='left', labelLimit=200, labelFontSize=12)
-        ),
-        x=alt.X(
-            '抽選順位中央値:Q',
-            title='抽選順位中央値',
-            axis=alt.Axis(labelFontSize=12, titleFontSize=14)
-        )
-    )
-    .properties(width=700, height=len(chart_df) * 30)
-)
-
-# バー上の数値ラベル
-text = chart.mark_text(align='left', baseline='middle', dx=3).encode(
-    text=alt.Text('抽選順位中央値:Q', format='.0f')
-)
-
-# 左余白を追加してラベルと干渉しないようにする
-combined = (chart + text).properties(
-    margin={'left': 100}  # 左余白を100px確保
-)
-
-# 表示（固定幅）
-st.altair_chart(combined, use_container_width=False)
+chart_df = top15.reset_index().rename(columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'})
+# ベースチャートと数値ラベル
+base_chart = alt.Chart(chart_df).mark_bar().encode(
+    x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
+    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
+).properties(width=700, height=max(300, len(chart_df)*25))
+text = base_chart.mark_text(align='left', baseline='middle', dx=3).encode(text=alt.Text('抽選順位中央値:Q'))
+layered = alt.layer(base_chart, text).configure_axis(labelFontSize=12, titleFontSize=14, labelAngle=0, labelAlign='right')
+st.altair_chart(layered, use_container_width=True)
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
 st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位")
