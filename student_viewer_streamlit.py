@@ -162,7 +162,7 @@ base_chart = alt.Chart(chart_df).mark_bar().encode(
     y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
 ).properties(width=700, height=max(300, len(chart_df)*25))
 text = base_chart.mark_text(align='left', baseline='middle', dx=3).encode(text=alt.Text('抽選順位中央値:Q'))
-layered = alt.layer(base_chart, text).configure_axis(labelFontSize=12, titleFontSize=14, labelAngle=0, labelAlign='right')
+layered = alt.layer(base_chart, text).configure_axis(labelFontSize=10, titleFontSize=14, labelAngle=0, labelAlign='right')
 st.altair_chart(layered, use_container_width=True)
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
