@@ -82,129 +82,58 @@ if ratio<70:
 
 # --- 通過確率シミュレーション ---
 st.subheader("🌀 通過確率（仮に第1希望とした場合）")
-if st.button("♻️ シミュレーション実行"):  # ボタン押下時のみ再実行
+if st.button("♻️ シミュレーション実行"):
     simulate_each_as_first = importlib.reload(simulate_each_as_first)
     st.session_state['flat_df'] = simulate_each_as_first.simulate_each_as_first(sid)
-
 if st.session_state['flat_df'] is None:
     with st.spinner("初回シミュレーション実行中..."):
         st.session_state['flat_df'] = simulate_each_as_first.simulate_each_as_first(sid)
 flat_df = st.session_state['flat_df']
 
-# --- 希望一覧＋通過確率比較 ---
-st.subheader("🎯 希望科通過確率一覧（順位あり / 仮に第1希望とした場合）")
-display = []
-for i in range(1, 21):
+# --- 希望科通過確率一覧 ---
+st.subheader("🎯 希望科通過確率一覧（順位あり/仮に第1希望）")
+display=[]
+for i in range(1,21):
     hope = responses_df.loc[sid].get(f"hope_{i}")
-    if pd.isna(hope) or not hope:
-        continue
-    prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
-    try:
-        col_name = "通過確率（仮に第1希望とした場合）"
-        if col_name not in flat_df.columns:
-            col_name = "通過確率"
-        prob_flat = flat_df.loc[flat_df["希望科"] == hope, col_name].values[0]
-    except Exception:
-        prob_flat = ""
-    display.append({
-        '希望': f"{i}: {hope}",
-        '順位あり': f"{int(prob_ranked)}%" if pd.notna(prob_ranked) else "",
-        '仮に第1希望とした場合': prob_flat
-    })
-df_disp = pd.DataFrame(display)
-st.dataframe(df_disp, use_container_width=True)
+    if not hope: continue
+    pr = prob_df.loc[sid].get(f"hope_{i}_確率")
+    col="通過確率（仮に第1希望とした場合）"
+    if col not in flat_df.columns: col="通過確率"
+    pf = flat_df.loc[flat_df["希望科"]==hope, col].values[0] if hope in flat_df["希望科"].values else ""
+    display.append({'希望':f"{i}: {hope}",'順位あり':f"{int(pr)}%" if pd.notna(pr) else "",'仮1':pf})
+st.dataframe(pd.DataFrame(display), use_container_width=True)
 
 # --- 人気診療科表示 ---
 st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
 median_col = rank_df.columns[1]
 rank_df[median_col] = pd.to_numeric(rank_df[median_col], errors='coerce')
 top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
-chart_df = top15.reset_index().rename(
-    columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'}
+chart_df = top15.reset_index().rename(columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'})
+
+# バーを順位小さい順にソートし、右側に数値ラベルを表示
+chart = alt.Chart(chart_df).mark_bar().encode(
+    x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
+    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
+).properties(width=700, height= max(300, len(chart_df)*25))
+
+text = chart.mark_text(
+    align='left',
+    baseline='middle',
+    dx=3
+).encode(
+    text=alt.Text('抽選順位中央値:Q')
 )
-chart = (
-    alt.Chart(chart_df)
-    .mark_bar()
-    .encode(
-        x='抽選順位中央値:Q',
-        y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'))
-    )
-    .properties(height=400)
+
+# 軸ラベルを回転して表示領域を確保し、表示名を完全に出す
+chart = chart.configure_axis(
+    labelFontSize=12,
+    titleFontSize=14,
+    labelAngle=0,
+    labelAlign='right'
 )
-text = (
-    alt.Chart(chart_df)
-    .mark_text(align='left', dx=3, baseline='middle')
-    .encode(
-        x='抽選順位中央値:Q',
-        y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending')),
-        text='抽選順位中央値:Q'
-    )
-)
+
 st.altair_chart(chart + text, use_container_width=True)
 
 # --- 昨年上限に達した科の最大通過順位 ---
 st.subheader("🔖 昨年：配属上限に達した科の最大通過順位（バーグラフ）")
-
-# 昨年データ読み込み
-hist_df = pd.read_csv("2024配属結果.csv", dtype={'student_id': str, 'lottery_order': int})
-cap_df  = pd.read_csv("department_capacity.csv")
-
-# レコード展開
-records = []
-term_cols = [c for c in hist_df.columns if c.startswith("term_")]
-for _, r in hist_df.iterrows():
-    rank = r['lottery_order']
-    for term in term_cols:
-        dept = r[term]
-        if pd.notna(dept) and dept not in ("","-"):
-            records.append({'department': dept, 'term': term, 'lottery_order': rank})
-df_long2 = pd.DataFrame(records)
-
-# departmentごとの昨年配属数合計とcapacity合計
-assign_dept = (
-    df_long2.groupby('department', as_index=False)
-            .size().rename(columns={'size':'assigned_count'})
-)
-cap_dept = (
-    cap_df.melt(
-        id_vars=['hospital_department'],
-        value_vars=[c for c in cap_df.columns if c.startswith('term_')],
-        var_name='term', value_name='capacity'
-    )
-    .groupby('hospital_department', as_index=False)
-    .agg({'capacity':'sum'})
-    .rename(columns={'hospital_department':'department'})
-)
-
-# 上限に達したdeptのみ抽出（しきい値によるフィルタリング）
-# departmentごとの上限達成マージ(depts_full)を準備
-depts_full = assign_dept.merge(cap_dept, on='department')
-# capacity の阈値スライダー（例：70%）
-threshold = st.slider(
-    "配属枠の何%以上が埋まった科を表示するか", min_value=0.0, max_value=1.0, value=0.7, step=0.05
-)
-# 指定割合以上埋まっている科を抽出
-reached_depts = depts_full[
-    depts_full['assigned_count'] >= depts_full['capacity'] * threshold
-]['department']
-
-# 対象deptのlottery_order最大値を取得
-max_rank = (
-    df_long2[df_long2['department'].isin(reached_depts)]
-    .groupby('department', as_index=False)['lottery_order']
-    .max()
-    .rename(columns={'lottery_order':'昨年の最大通過順位'})
-    .sort_values('昨年の最大通過順位')
-)
-
-# バーグラフ表示
-chart2 = (
-    alt.Chart(max_rank)
-    .mark_bar()
-    .encode(
-        x=alt.X('昨年の最大通過順位:Q', title='最大通過順位'),
-        y=alt.Y('department:N', sort='-x', title='診療科')
-    )
-    .properties(width=800, height=max(300, len(max_rank)*20))
-)
-st.altair_chart(chart2, use_container_width=True)
+# (以降略)
