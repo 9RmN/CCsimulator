@@ -4,7 +4,7 @@ import numpy as np
 import random
 from collections import defaultdict
 
-N_SIMULATIONS = 50
+N_SIMULATIONS = 100
 
 def compute_softmax_probs(scores: np.ndarray, temperature: float = 1.0) -> np.ndarray:
     z = scores / temperature
@@ -68,7 +68,7 @@ def simulate_each_as_first(student_id):
     ], dtype=float)
 
     # --- Softmax＋温度付きサンプリング準備 ---
-    temperature = 3.0  # 調整可
+    temperature = 2.0  # 調整可
     probs = compute_softmax_probs(raw_scores, temperature)
 
     # --- 未回答者リスト生成 ---
