@@ -27,14 +27,12 @@ def main():
 
     student_ids = responses['student_id'].tolist()
     hope_cols   = [c for c in responses.columns if c.startswith('hope_')]
-    term_cols   = [c for c in terms_df.columns if c.startswith('term_')]
-    num_terms   = len(term_cols)
 
     # 重みとカウント用の辞書
     counts        = {sid: defaultdict(float) for sid in student_ids}
     total_weights = {sid: 0.0 for sid in student_ids}
 
-    # 回答済/未回答者の判別と補完重み
+    # 回答済/未回答者の判別
     answered       = set(responses['student_id'])
     answered_ratio = len(answered) / len(terms_df)
 
@@ -62,20 +60,17 @@ def main():
             # 全タームで配属された科の集合（未配属は除外）
             assigned_depts = set(rows['assigned_department']) - {None, '未配属'}
 
-            # 各希望順位ごとに、配属された科があれば重みを加算（breakしない）
+            # 各希望順位ごとに、最初にマッチした科だけをカウント
             for idx, col in enumerate(hope_cols, start=1):
-    val = responses.loc[responses['student_id'] == sid, col].iloc[0]
-    if pd.isna(val):
-        continue
-    if val in assigned_depts:
-        counts[sid][idx] += w
-        # 最初にマッチした希望のみカウントして break
-        break):
+                val = responses.loc[responses['student_id'] == sid, col].iloc[0]
+                if pd.isna(val):
                     continue
                 if val in assigned_depts:
                     counts[sid][idx] += w
+                    # 最初にマッチした希望のみカウント
+                    break
 
-        # スムージング (ベイズ補正) を入れて確率化
+    # スムージング (ベイズ補正) を入れて確率化
     K = 2.0  # スムージングパラメータ
     output_rows = []
     for sid in student_ids:
@@ -84,7 +79,6 @@ def main():
         for idx in range(1, len(hope_cols) + 1):
             num = counts[sid][idx]
             # (成功シミュレーション回数 + 1) / (重み合計 + K) * 100%
-            # 全タームではなく、シミュレーション単位で一致するかを確率化
             p = (num + 1.0) / (tw + K) * 100.0
             base[f'hope_{idx}_確率'] = p
         output_rows.append(base)
@@ -98,5 +92,4 @@ def main():
     )
 
 if __name__ == '__main__':
-    main()
     main()
