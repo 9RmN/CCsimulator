@@ -75,7 +75,7 @@ def simulate_each_as_first(student_id):
 
             # 他の学生の割り当て
             all_terms = terms.merge(lottery, on="student_id")
-            merged = full_responses.merge(all_terms, on="student_id").merge(lottery, on="student_id")
+            merged = full_responses.merge(all_terms, on="student_id")
             merged = merged.sort_values("lottery_order")
             student_assigned = {}
 
