@@ -172,9 +172,14 @@ reached = depts_full[depts_full['assigned_count'] >= depts_full['capacity']*thre
 # 最大通過順位計算
 max_rank = (df_long2[df_long2['department'].isin(reached)].groupby('department',as_index=False)['lottery_order'].max()
             .rename(columns={'lottery_order':'昨年の最大通過順位'}).sort_values('昨年の最大通過順位'))
-# バーグラフ
-chart2 = alt.Chart(max_rank).mark_bar().encode(
-    x=alt.X('昨年の最大通過順位:Q',title='最大通過順位'),
-    y=alt.Y('department:N',sort='-x',title='診療科')
-).properties(width=700, height=max(300, len(max_rank)*25))
+# バーグラフ（人気な科を上に表示）
+chart2 = (
+    alt.Chart(max_rank)
+    .mark_bar()
+    .encode(
+        x=alt.X('昨年の最大通過順位:Q', title='最大通過順位'),
+        y=alt.Y('department:N', sort=alt.EncodingSortField(field='昨年の最大通過順位', order='ascending'), title='診療科')
+    )
+    .properties(width=700, height=max(300, len(max_rank)*25))
+)
 st.altair_chart(chart2, use_container_width=True)
