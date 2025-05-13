@@ -159,39 +159,43 @@ chart_df = top15.reset_index().rename(
     columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'}
 )
 
-# ベースチャートと数値ラベル
-base_chart = alt.Chart(chart_df).mark_bar().encode(
-    x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
-    y=alt.Y(
-        '診療科:N',
-        sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'),
-        title=None
+# バーチャートとラベルを合成
+chart = (
+    alt.Chart(chart_df)
+    .mark_bar()
+    .encode(
+        y=alt.Y(
+            '診療科:N',
+            sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'),
+            title=None,
+            axis=alt.Axis(
+                labelAngle=0,
+                labelAlign='left',
+                labelLimit=200,
+                labelFontSize=12
+            )
+        ),
+        x=alt.X(
+            '抽選順位中央値:Q',
+            title='抽選順位中央値',
+            axis=alt.Axis(labelFontSize=12, titleFontSize=14)
+        )
     )
-).properties(
-    width=600,                # 固定幅
-    height=len(chart_df) * 30, # 行数に応じて高さ調整
-    padding={'left': 150}      # 左余白を確保して科名が見切れないように
+    .properties(
+        width=800,                # 表示幅を調整
+        height=len(chart_df) * 30  # 行数に応じた高さ
+    )
 )
 
-# バー上に数値を表示
-text = base_chart.mark_text(
+# バー上の数値ラベル
+text = chart.mark_text(
     align='left', baseline='middle', dx=3
 ).encode(
     text=alt.Text('抽選順位中央値:Q', format='.0f')
 )
 
-# Y軸ラベルの省略を防ぐ
-layered = alt.layer(base_chart, text).configure_axisY(
-    labelFontSize=12,
-    titleFontSize=14,
-    labelAngle=0,
-    labelAlign='left',
-    labelLimit=300
-)
-
-# 表示（固定幅）
-st.altair_chart(layered, use_container_width=False)
-
+# 合成して表示
+st.altair_chart(chart + text, use_container_width=False)
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
 st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位")
