@@ -100,7 +100,6 @@ except Exception as e:
 
 # --- 希望一覧＋通過確率比較 ---
 st.subheader("🎯 希望科通過確率一覧（順位あり / 仮に第1希望とした場合）")
-
 # ... (略) ...
 
 # --- 人気診療科表示 ---
@@ -112,14 +111,23 @@ chart_df = top15.reset_index().rename(
     columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'}
 )
 # 昇順ソート（有利順）
-chart = alt.Chart(chart_df).mark_bar().encode(
-    x=alt.X('抽選順位中央値:Q'),
-    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'))
-).properties(height=400)
-text = alt.Chart(chart_df).mark_text(align='left', dx=3, baseline='middle').encode(
-    x=alt.X('抽選順位中央値:Q'),
-    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending')),
-    text=alt.Text('抽選順位中央値:Q')
+chart = (
+    alt.Chart(chart_df)
+    .mark_bar()
+    .encode(
+        x=alt.X('抽選順位中央値:Q'),
+        y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'))
+    )
+    .properties(height=400)
+)
+text = (
+    alt.Chart(chart_df)
+    .mark_text(align='left', dx=3, baseline='middle')
+    .encode(
+        x=alt.X('抽選順位中央値:Q'),
+        y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending')),
+        text=alt.Text('抽選順位中央値:Q')
+    )
 )
 st.altair_chart(chart + text, use_container_width=True)
 
@@ -136,43 +144,4 @@ for _, r in hist_df.iterrows():
         dept = r[term]
         if pd.notna(dept) and dept not in ("","-"):
             records.append({"department": dept, "term": term, "lottery_order": rank})
-# long
-```python
-df_long2 = pd.DataFrame(records)
-# assign_counts
-assign_counts = (
-    df_long2.groupby(["department","term"], as_index=False)\
-             .size().rename(columns={"size": "assigned_count"})
-)
-# capacity long
-cap_long = cap_df.melt(
-    id_vars=["hospital_department"],
-    value_vars=[c for c in cap_df.columns if c.startswith("term_")],
-    var_name="term", value_name="capacity"
-).rename(columns={"hospital_department": "department"})
-cap_long["capacity"] = cap_long["capacity"].fillna(0).astype(int)
-# reached pairs
-full = assign_counts.merge(cap_long, on=["department","term"])
-reached = full[full["assigned_count"] >= full["capacity"]]
-# filter df_long2 by reached
-df_reached = df_long2.merge(
-    reached[['department','term']], on=['department','term']
-)
-# compute max_rank
-max_rank = (
-    df_reached.groupby("department", as_index=False)["lottery_order"]
-             .max().rename(columns={"lottery_order": "昨年の最大通過順位"})
-             .sort_values("昨年の最大通過順位")
-)
-# bar chart
-chart2 = (
-    alt.Chart(max_rank)
-    .mark_bar()
-    .encode(
-        x=alt.X("昨年の最大通過順位:Q", title="最大通過順位"),
-        y=alt.Y("department:N", sort="-x", title="診療科")
-    )
-    .properties(width=800, height=max(300, len(max_rank)*20))
-)
-st.altair_chart(chart2, use_container_width=True)
-```
+# longフォーマット展開
