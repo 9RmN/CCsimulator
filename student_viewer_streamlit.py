@@ -4,7 +4,7 @@ import pandas as pd
 import hashlib
 import altair as alt
 import importlib
-import simulate_self_flat  # 自作モジュール
+import simulate_each_as_first  # 通過確率シミュレーション（仮に第1希望とした場合）
 
 # --- 自動リフレッシュ ---
 st.markdown('<meta http-equiv="refresh" content="900">', unsafe_allow_html=True)
@@ -63,12 +63,13 @@ if not st.session_state['authenticated']:
     sid = st.text_input("学生番号", value="", key="login_uid")
     pwd = st.text_input("パスワード", type="password", key="login_pwd")
     if st.button("ログイン"):
-        if verify_user(sid, pwd):
-            st.session_state['authenticated'] = True
-            st.session_state['user_id'] = sid.lstrip('0')
-            st.success(f"認証成功: 学生番号={sid.lstrip('0')}")
-        else:
-            st.error("学生番号またはパスワードが間違っています")
+        with st.spinner("ログイン中... シミュレーションの準備に少し時間がかかることがあります"):
+            if verify_user(sid, pwd):
+                st.session_state['authenticated'] = True
+                st.session_state['user_id'] = sid.lstrip('0')
+                st.success(f"認証成功: 学生番号={sid.lstrip('0')}")
+            else:
+                st.error("学生番号またはパスワードが間違っています")
     st.stop()
 
 # --- 認証後画面 ---
@@ -83,20 +84,21 @@ st.markdown(f"🧾 **回答者：{answered_count} / {all_count}人**（{ratio:.1
 if ratio < 70:
     st.warning("⚠️ 回答者が少ないため、結果がまだ不安定です。")
 
-# --- 再シミュレーションボタン ---
-st.subheader("🌀 通過確率（順位無視シミュレーション）")
+# --- 通過確率シミュレーション実行 ---
+st.subheader("🌀 通過確率（仮に第1希望とした場合）")
 if st.button("♻️ 再シミュレーションを実行"):
-    simulate_self_flat = importlib.reload(simulate_self_flat)
+    simulate_each_as_first = importlib.reload(simulate_each_as_first)
     st.success("再シミュレーションを実行しました。")
 
 try:
-    flat_result = simulate_self_flat.simulate_self_flat(sid)
+    with st.spinner("シミュレーションを実行中です..."):
+        flat_df = simulate_each_as_first.simulate_each_as_first(sid)
 except Exception as e:
-    st.error(f"エラーが発生しました: {e}")
+    st.error(f"シミュレーションエラー: {e}")
     st.stop()
 
-# --- 希望一覧＋通過確率比較 ---
-st.subheader("🎯 希望科通過確率一覧（順位あり / 順位なし）")
+# --- 希望一覧＋通過確率比較（1つの表） ---
+st.subheader("🎯 希望科通過確率一覧（順位あり / 仮に第1希望とした場合）")
 
 display = []
 for i in range(1, 21):
@@ -105,14 +107,13 @@ for i in range(1, 21):
         continue
     prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
     try:
-        prob_flat = flat_result[flat_result["希望科"] == hope]["通過確率（順位無視）"].values[0]
+        prob_flat = flat_df[flat_df["希望科"] == hope]["通過確率（仮に第1希望として出した場合）"].values[0]
     except IndexError:
         prob_flat = ""
-
     display.append({
         '希望': f"{i}: {hope}",
         '順位あり': f"{int(prob_ranked)}%" if pd.notna(prob_ranked) else "",
-        '順位なし': prob_flat
+        '仮に第1希望にした場合': prob_flat
     })
 
 df_disp = pd.DataFrame(display)
@@ -131,7 +132,7 @@ def color_prob(val):
     return ''
 
 st.dataframe(
-    df_disp.style.map(color_prob, subset=['順位あり', '順位なし']),
+    df_disp.style.map(color_prob, subset=['順位あり', '仮に第1希望にした場合']),
     use_container_width=True
 )
 
