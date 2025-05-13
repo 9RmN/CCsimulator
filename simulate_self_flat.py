@@ -19,7 +19,7 @@ def simulate_self_flat(student_id):
 
     # 希望一覧（重複除く、空白・"-"除く）
     hopes = self_row.iloc[0].drop(labels="student_id").dropna().unique()
-    hopes = [h for h in hopes if h != "-" and h != ""]
+    hopes = [h for h in hopes if h != "-" and h.strip() != ""]
 
     if len(hopes) == 0:
         raise ValueError("希望が入力されていません")
@@ -36,9 +36,10 @@ def simulate_self_flat(student_id):
     MAX_HOPES = 20
     for i in range(1, MAX_HOPES + 1):
         w = MAX_HOPES + 1 - i
-        if f"hope_{i}" in others.columns:
-            for dept in others[f"hope_{i}"].dropna():
-                if dept != "-" and dept != "":
+        col = f"hope_{i}"
+        if col in others.columns:
+            for dept in others[col].dropna():
+                if dept != "-" and dept.strip() != "":
                     popularity[dept] += w
 
     # 未回答者を抽出
@@ -49,17 +50,21 @@ def simulate_self_flat(student_id):
 
     # popularityから未回答者の希望を生成
     generated_rows = []
-    depts, weights = zip(*[(d, v / sum(popularity.values())) for d, v in popularity.items()])
-    for uid in unanswered_df["student_id"]:
-        row = {"student_id": uid}
-        picks = random.choices(depts, weights=weights, k=MAX_HOPES)
-        for i, dept in enumerate(picks, 1):
-            row[f"hope_{i}"] = dept
-        generated_rows.append(row)
+    if popularity:
+        depts, weights = zip(*[(d, v / sum(popularity.values())) for d, v in popularity.items()])
+        for uid in unanswered_df["student_id"]:
+            row = {"student_id": uid}
+            picks = random.choices(depts, weights=weights, k=MAX_HOPES)
+            for i, dept in enumerate(picks, 1):
+                row[f"hope_{i}"] = dept
+            generated_rows.append(row)
     generated = pd.DataFrame(generated_rows)
 
-    # ベース responses を統合
+    # responses統合
     full_responses = pd.concat([others, generated], ignore_index=True)
+
+    # term情報と抽選順位を付加
+    merged = full_responses.merge(terms, on="student_id").merge(lottery, on="student_id")
 
     # 希望ごとの通過回数記録用
     count = {dept: 0 for dept in hopes}
@@ -72,21 +77,18 @@ def simulate_self_flat(student_id):
             for t in capacity.columns[1:]:
                 cap[(dept, t)] = r[t]
 
-        # 各学生の term を展開
-        all_terms = terms.merge(lottery, on="student_id")
         student_assigned = {}
 
-        # 他学生を抽選順に割り当て
-        merged = full_responses.merge(all_terms, on="student_id").merge(lottery, on="student_id")
-        merged = merged.sort_values("lottery_order")
-        for _, r in merged.iterrows():
+        # 他学生の配属処理
+        merged_sorted = merged.sort_values("lottery_order")
+        for _, r in merged_sorted.iterrows():
             sid = r["student_id"]
             term_list = [r[f"term_{i}"] for i in range(1, 5)]
             used = student_assigned.get(sid, set())
             for term in term_list:
                 for i in range(1, MAX_HOPES + 1):
                     d = r.get(f"hope_{i}", "")
-                    if pd.isna(d) or d in used: continue
+                    if pd.isna(d) or d in used or d not in cap: continue
                     key = (d, f"term_{term}")
                     if cap.get(key, 0) > 0:
                         cap[key] -= 1
@@ -94,7 +96,7 @@ def simulate_self_flat(student_id):
                         student_assigned[sid] = used
                         break
 
-        # 自分を順位無視で希望科から割り当て
+        # 自分を順位無視で term 1〜4 に割り当て
         used = set()
         for term in my_terms:
             for d in hopes:
