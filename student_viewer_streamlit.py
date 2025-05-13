@@ -160,23 +160,20 @@ chart_df = top15.reset_index().rename(
 )
 
 # ベースチャートと数値ラベル
-base_chart = (
-    alt.Chart(chart_df)
-    .mark_bar()
-    .encode(
-        x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
-        y=alt.Y(
-            '診療科:N',
-            sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'),
-            title=None
-        )
+base_chart = alt.Chart(chart_df).mark_bar().encode(
+    x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
+    y=alt.Y(
+        '診療科:N',
+        sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'),
+        title=None
     )
-    .properties(
-        width=600,                 # 幅を調整
-        height=len(chart_df) * 30  # 行数に応じた高さ
-    )
+).properties(
+    width=600,                # 固定幅
+    height=len(chart_df) * 30, # 行数に応じて高さ調整
+    padding={'left': 150}      # 左余白を確保して科名が見切れないように
 )
 
+# バー上に数値を表示
 text = base_chart.mark_text(
     align='left', baseline='middle', dx=3
 ).encode(
@@ -192,8 +189,8 @@ layered = alt.layer(base_chart, text).configure_axisY(
     labelLimit=300
 )
 
+# 表示（固定幅）
 st.altair_chart(layered, use_container_width=False)
-
 
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
