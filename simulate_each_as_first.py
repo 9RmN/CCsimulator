@@ -1,130 +1,124 @@
-# simulate_each_as_first.py
 import pandas as pd
 import numpy as np
 import random
 from collections import defaultdict
 
-N_SIMULATIONS = 50
+# モンテカルロ回数
+N_SIMULATIONS = 100
 
-def compute_softmax_probs(scores: np.ndarray, temperature: float = 1.0) -> np.ndarray:
-    z = scores / temperature
-    z = z - np.max(z)        # 数値安定化
-    exp_z = np.exp(z)
-    return exp_z / exp_z.sum()
-
-def simulate_each_as_first(student_id):
-    # --- データ読込 ---
+def simulate_each_as_first(student_id: str) -> pd.DataFrame:
+    """
+    指定した学生IDについて、各希望科を第1希望とした場合の通過確率を推定する。
+    """
+    # --- データ読み込み ---
     responses = pd.read_csv("responses.csv", dtype={'student_id': str})
     lottery   = pd.read_csv("lottery_order.csv", dtype={'student_id': str, 'lottery_order': int})
     terms     = pd.read_csv("student_terms.csv", dtype={'student_id': str})
     capacity  = pd.read_csv("department_capacity.csv")
-    # --- 昨年実配属結果読み込み ---
-    hist_df   = pd.read_csv("2024配属結果.csv", dtype=str)
 
-    # --- 自分の希望取得 ---
-    self_row = responses[responses["student_id"] == student_id]
-    if self_row.empty:
-        raise ValueError("student_id が responses.csv に存在しません")
-    hopes = self_row.iloc[0].drop(labels="student_id").dropna().unique()
-    hopes = [h for h in hopes if h not in ("", "-")]
+    # 自分の希望
+    me = responses[responses['student_id'] == student_id]
+    if me.empty:
+        raise ValueError(f"student_id {student_id} が見つかりません。")
+    hope_cols = [c for c in responses.columns if c.startswith('hope_')]
+    hopes = [h for h in me[hope_cols].iloc[0].dropna().tolist() if h and h != '-']
     if not hopes:
-        raise ValueError("希望が入力されていません")
+        raise ValueError("希望が登録されていません。")
 
-    my_terms = terms[terms["student_id"] == student_id].iloc[0][
-        ["term_1","term_2","term_3","term_4"]
-    ].values
-
-    lottery_row = lottery[lottery["student_id"] == student_id]
-    if lottery_row.empty:
-        raise ValueError("student_id が lottery_order.csv に存在しません")
-    my_order = int(lottery_row["lottery_order"].iloc[0])
-
-    others = responses[responses["student_id"] != student_id]
-
-    # --- popularity スコア生成（回答ベース） ---
-    popularity = defaultdict(int)
-    MAX_HOPES = 20
-    for i in range(1, MAX_HOPES+1):
+    # 他学生 + 補完
+    others = responses[responses['student_id'] != student_id]
+    # popularity
+    MAX_HOPES = len(hope_cols)
+    pop = defaultdict(int)
+    for i, col in enumerate(hope_cols, start=1):
         w = MAX_HOPES + 1 - i
-        col = f"hope_{i}"
-        if col in others.columns:
-            for dept in others[col].dropna():
-                if dept not in ("", "-"):
-                    popularity[dept] += w
+        for d in others[col].dropna():
+            if d and d != '-':
+                pop[d] += w
+    dept_list, counts = zip(*pop.items())
+    total = sum(counts)
+    weights = [c/total for c in counts]
 
-    # --- 昨年配属実績をカウント ---
-    hist_count = defaultdict(int)
-    for i in range(1, 12):  # term_1～term_11
-        col = f"term_{i}"
-        for dept in hist_df[col].dropna():
-            hist_count[dept] += 1
+    # 未回答者の補完
+    answered_ids = set(others['student_id'])
+    all_ids      = set(terms['student_id'])
+    unresp       = list(all_ids - answered_ids - {student_id})
+    gen_rows = []
+    for uid in unresp:
+        picks = []
+        while len(picks) < MAX_HOPES:
+            choice = random.choices(dept_list, weights=weights, k=1)[0]
+            if choice not in picks:
+                picks.append(choice)
+        row = {'student_id': uid}
+        for idx, d in enumerate(picks, start=1): row[f'hope_{idx}'] = d
+        gen_rows.append(row)
+    gen_df = pd.DataFrame(gen_rows)
+    full_responses = pd.concat([others, gen_df], ignore_index=True)
 
-    # --- 生スコア混合（α:β）---
-    alpha, beta = 0.7, 0.3
-    dept_list = list(set(popularity.keys()) | set(hist_count.keys()))
-    raw_scores = np.array([
-        alpha * popularity.get(d, 0) + beta * hist_count.get(d, 0)
-        for d in dept_list
-    ], dtype=float)
+    # terms+lottery
+    terms_lot = terms.merge(lottery, on='student_id')
 
-    # --- Softmax＋温度付きサンプリング準備 ---
-    temperature = 2.0  # 調整可
-    probs = compute_softmax_probs(raw_scores, temperature)
-
-    # --- 未回答者リスト生成 ---
-    answered_ids   = set(others["student_id"])
-    all_ids        = set(terms["student_id"])
-    unanswered_ids = list(all_ids - answered_ids - {student_id})
-
-    generated_rows = []
-    for uid in unanswered_ids:
-        row = {"student_id": uid}
-        picks = np.random.choice(dept_list, size=MAX_HOPES, replace=False, p=probs)
-        for i, dept in enumerate(picks, 1):
-            row[f"hope_{i}"] = dept
-        generated_rows.append(row)
-    generated = pd.DataFrame(generated_rows)
-
-    # --- フルレスポンス統合 ---
-    full_responses = pd.concat([others, generated], ignore_index=True)
-
-    # --- 各希望科を第1希望にしたシミュレーション ---
-    result = []
+    results = []
     for target in hopes:
         success = 0
         for _ in range(N_SIMULATIONS):
-            # 容量リセット
-            cap = {}
-            for _, r in capacity.iterrows():
-                dept = r["hospital_department"]
-                for t in capacity.columns[1:]:
-                    cap[(dept, t)] = r[t]
-            # 他学生配属
-            merged = full_responses.merge(terms.merge(lottery, on="student_id"), on="student_id")
-            merged = merged.sort_values("lottery_order")
-            stu_assigned = {}
+            # capacity reset
+            cap = {(r['hospital_department'], t): int(r[t]) if not pd.isna(r[t]) else 0
+                   for _, r in capacity.iterrows() for t in capacity.columns[1:]}
+            # 他学生割当
+            merged = full_responses.merge(terms_lot, on='student_id')
+            # ジッターを加えて順序を微調整
+            merged = merged.copy()
+            merged['_ord'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged))*0.01
+            merged = merged.sort_values('_ord')
+            # 割当
+            assigned = {}
             for _, r in merged.iterrows():
-                sid = r["student_id"]
-                used = stu_assigned.get(sid, set())
-                for term in [r[f"term_{i}"] for i in range(1,5)]:
-                    for i in range(1, MAX_HOPES+1):
-                        d = r.get(f"hope_{i}", "")
-                        if pd.isna(d) or d in used: continue
-                        key = (d, f"term_{term}")
-                        if cap.get(key, 0) > 0:
-                            cap[key] -= 1
-                            used.add(d)
-                            stu_assigned[sid] = used
-                            break
-            # 自分配属判定
-            for term in my_terms:
-                key = (target, f"term_{term}")
-                if cap.get(key, 0) > 0:
-                    cap[key] -= 1
+                sid = r['student_id']
+                used = assigned.get(sid, set())
+                term = r['term']
+                for i in range(1, MAX_HOPES+1):
+                    dept = r.get(f'hope_{i}', '')
+                    if not dept or dept in used: continue
+                    key = (dept, f'term_{term}')
+                    if cap.get(key, 0) > 0:
+                        cap[key] -= 1
+                        assigned.setdefault(sid, set()).add(dept)
+                        break
+            # 自分の配当判定
+            my_terms = terms[terms['student_id']==student_id].iloc[0]
+            for i in range(1,5):
+                t = my_terms[f'term_{i}']
+                if cap.get((target, f'term_{t}'),0) > 0:
                     success += 1
                     break
+        pct = round(success/N_SIMULATIONS*100, 1)
+        results.append({'student_id': student_id, '希望科': target, '通過確率': pct})
+    return pd.DataFrame(results)
 
-        pct = round(success / N_SIMULATIONS * 100, 1)
-        result.append({"希望科": target, "通過確率": f"{pct}%"})
+# === CLI: 並列で全回答者分を一気に生成 ===
+if __name__ == '__main__':
+    import os
+    from concurrent.futures import ProcessPoolExecutor, as_completed
 
-    return pd.DataFrame(result)
+    # 回答者のみ
+    resp = pd.read_csv('responses.csv', dtype={'student_id':str})
+    sids = resp['student_id'].tolist()
+
+    output = []
+    workers = min(4, os.cpu_count() or 1)
+    with ProcessPoolExecutor(max_workers=workers) as exe:
+        futures = {exe.submit(simulate_each_as_first, sid): sid for sid in sids}
+        for fut in as_completed(futures):
+            sid = futures[fut]
+            try:
+                df = fut.result()
+                output.append(df)
+                print(f"{sid}: done")
+            except Exception as e:
+                print(f"{sid}: error {e}")
+    # 結合と保存
+    all_df = pd.concat(output, ignore_index=True)
+    all_df.to_csv('first_choice_probabilities.csv', index=False)
+    print('All first choice probabilities generated.')
