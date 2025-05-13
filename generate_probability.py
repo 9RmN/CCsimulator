@@ -64,8 +64,13 @@ def main():
 
             # 各希望順位ごとに、配属された科があれば重みを加算（breakしない）
             for idx, col in enumerate(hope_cols, start=1):
-                val = responses.loc[responses['student_id'] == sid, col].iloc[0]
-                if pd.isna(val):
+    val = responses.loc[responses['student_id'] == sid, col].iloc[0]
+    if pd.isna(val):
+        continue
+    if val in assigned_depts:
+        counts[sid][idx] += w
+        # 最初にマッチした希望のみカウントして break
+        break):
                     continue
                 if val in assigned_depts:
                     counts[sid][idx] += w
