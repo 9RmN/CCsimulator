@@ -3,12 +3,13 @@ import streamlit as st
 import pandas as pd
 import hashlib
 import altair as alt
-from simulate_self_flat import simulate_self_flat  # <- 事前にこのモジュールが必要です
+import importlib
+import simulate_self_flat  # 自作モジュール
 
-# --- Streamlit 自動リフレッシュ ---
-st.markdown('<meta http-equiv="refresh" content="300">', unsafe_allow_html=True)
+# --- 自動リフレッシュ ---
+st.markdown('<meta http-equiv="refresh" content="900">', unsafe_allow_html=True
 
-# --- セッションステート 初期化 ---
+# --- セッションステート初期化 ---
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 if 'user_id' not in st.session_state:
@@ -17,12 +18,9 @@ if 'user_id' not in st.session_state:
 # --- Pepper の取得 ---
 try:
     PEPPER = st.secrets['auth']['pepper']
-    st.info("🔒 Pepper を st.secrets['auth']['pepper'] から読み込みました")
 except Exception:
     PEPPER = os.environ.get('PEPPER')
-    if PEPPER:
-        st.info("🔒 Pepper を環境変数から読み込みました")
-    else:
+    if not PEPPER:
         st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
         st.stop()
 
@@ -36,30 +34,24 @@ def load_data():
     responses_df = pd.read_csv("responses.csv", dtype={'student_id': str})
 
     # 正規化
-    responses_df['student_id'] = responses_df['student_id'].str.lstrip('0')
-    prob_df['student_id']      = prob_df['student_id'].str.lstrip('0')
-    terms_df['student_id']     = terms_df['student_id'].str.lstrip('0')
-
-    # インデックス設定
-    responses_df.set_index('student_id', inplace=True)
-    prob_df.set_index('student_id', inplace=True)
-    terms_df.set_index('student_id', inplace=True)
+    for df in [responses_df, prob_df, terms_df]:
+        df['student_id'] = df['student_id'].str.lstrip('0')
+        df.set_index('student_id', inplace=True)
 
     return prob_df, auth_df, rank_df, terms_df, responses_df
 
 prob_df, auth_df, rank_df, terms_df, responses_df = load_data()
 
-# --- ユーザー認証関数 ---
+# --- 認証 ---
 def verify_user(sid, pwd):
     if not sid.isdigit():
         return False
-    row = auth_df[(auth_df['student_id'] == sid) & (auth_df['role'].isin(['student','admin']))]
+    row = auth_df[(auth_df.index == sid) & (auth_df['role'].isin(['student','admin']))]
     if row.empty:
         return False
     hashed = hashlib.sha256((pwd + PEPPER).encode()).hexdigest()
     return hashed == row.iloc[0]['password_hash']
 
-# --- ログイン画面 ---
 if not st.session_state['authenticated']:
     st.title("🔐 ログイン")
     sid = st.text_input("学生番号", value="", key="login_uid")
@@ -70,75 +62,66 @@ if not st.session_state['authenticated']:
             st.session_state['user_id'] = sid
             st.success(f"認証成功: 学生番号={sid}")
         else:
-            st.error("認証失敗：学生番号またはパスワードが違います。")
+            st.error("学生番号またはパスワードが間違っています")
     st.stop()
 
-# --- 認証後コンテンツ ---
+# --- 認証後画面 ---
 sid = st.session_state['user_id']
 st.title(f"🎓 選択科アンケート (学生番号={sid})")
 
-# 回答率表示
+# --- 回答状況表示 ---
 all_count = len(terms_df)
 answered_count = responses_df.shape[0]
-answered_ratio = answered_count / all_count * 100
-st.markdown(f"🧾 **回答者：{answered_count} / {all_count}人**（{answered_ratio:.1f}%）")
-if answered_ratio < 70:
+ratio = answered_count / all_count * 100
+st.markdown(f"🧾 **回答者：{answered_count} / {all_count}人**（{ratio:.1f}%）")
+if ratio < 70:
     st.warning("⚠️ 回答者が少ないため、結果がまだ不安定です。")
 
-import importlib
-import simulate_self_flat  # 自作モジュールとしてインポート
-
-# --- 通過確率（順位無視）シミュレーション ---
+# --- 再シミュレーションボタン ---
 st.subheader("🌀 通過確率（順位無視シミュレーション）")
-
-# ボタン：キャッシュ削除して再シミュレーション
 if st.button("♻️ 再シミュレーションを実行"):
-    simulate_self_flat = importlib.reload(simulate_self_flat)  # キャッシュ削除の代替
+    simulate_self_flat = importlib.reload(simulate_self_flat)
     st.success("再シミュレーションを実行しました。")
 
-# 結果表示（常に毎回再実行、またはキャッシュしておきたい場合は調整可）
 try:
-    result_df = simulate_self_flat.simulate_self_flat(sid)
-    st.dataframe(result_df, use_container_width=True)
+    flat_result = simulate_self_flat.simulate_self_flat(sid)
 except Exception as e:
     st.error(f"エラーが発生しました: {e}")
+    st.stop()
 
-# --- 通過確率（順位あり/なし）表示 ---
+# --- 希望一覧＋通過確率比較 ---
 st.subheader("🎯 希望科通過確率一覧（順位あり / 順位なし）")
-@st.cache_data(ttl=3600)
-def run_flat_sim(student_id):
-    return simulate_self_flat(student_id)
 
-flat_result = run_flat_sim(sid)
 display = []
 for i in range(1, 21):
-    hope = responses_df.loc[sid].get(f"hope_{i}") if sid in responses_df.index else None
-    if not hope or pd.isna(hope):
+    hope = responses_df.loc[sid].get(f"hope_{i}")
+    if pd.isna(hope) or not hope:
         continue
-    prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率") if sid in prob_df.index else None
-    prob_flat = flat_result.get(hope)
-    label_ranked = f"{int(prob_ranked)}%" if pd.notna(prob_ranked) else ""
-    label_flat = f"{prob_flat:.0f}%" if prob_flat is not None else ""
+    prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
+    try:
+        prob_flat = flat_result[flat_result["希望科"] == hope]["通過確率（順位無視）"].values[0]
+    except IndexError:
+        prob_flat = ""
+
     display.append({
-        '希望': f"{i}:{hope}",
-        '順位あり': label_ranked,
-        '順位なし': label_flat
+        '希望': f"{i}: {hope}",
+        '順位あり': f"{int(prob_ranked)}%" if pd.notna(prob_ranked) else "",
+        '順位なし': prob_flat
     })
 
 df_disp = pd.DataFrame(display)
 
-# 色付け関数
 def color_prob(val):
     try:
         num = float(val.rstrip('%'))
         if num >= 80:
             return 'background-color:#d4edda'
-        if num >= 50:
+        elif num >= 50:
             return 'background-color:#fff3cd'
-        if num > 0:
+        elif num > 0:
             return 'background-color:#f8d7da'
     except:
-        pass
+        return ''
     return ''
 
 st.dataframe(
@@ -146,15 +129,15 @@ st.dataframe(
     use_container_width=True
 )
 
-# 1〜3希望人数テーブル表示
+# --- 希望人数表示 ---
 st.subheader("📋 第1～3希望人数 (科ごと・Term1～Term11)")
 try:
     dept_summary = pd.read_csv("department_summary.csv", index_col=0)
     st.dataframe(dept_summary, use_container_width=True)
 except FileNotFoundError:
-    st.warning("department_summary.csv が見つかりません。管理者に連絡してください。")
+    st.warning("department_summary.csv が見つかりません。")
 
-# 人気診療科トップ15表示
+# --- 人気診療科表示 ---
 st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
 median_col = rank_df.columns[1]
 rank_df[median_col] = pd.to_numeric(rank_df[median_col], errors='coerce')
@@ -162,15 +145,13 @@ top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
 chart_df = top15.reset_index().rename(
     columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'}
 )
-chart_df = chart_df.sort_values('抽選順位中央値')
 chart = alt.Chart(chart_df).mark_bar().encode(
-    x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
-    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
+    x=alt.X('抽選順位中央値:Q'),
+    y=alt.Y('診療科:N', sort='ascending')
 ).properties(height=400)
 text = alt.Chart(chart_df).mark_text(align='left', dx=3, baseline='middle').encode(
-    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending')),
     x=alt.X('抽選順位中央値:Q'),
+    y=alt.Y('診療科:N', sort='ascending'),
     text=alt.Text('抽選順位中央値:Q')
 )
-
 st.altair_chart(chart + text, use_container_width=True)
