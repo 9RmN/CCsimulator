@@ -4,7 +4,7 @@ import random
 from collections import defaultdict
 
 # モンテカルロ回数
-N_SIMULATIONS = 10
+N_SIMULATIONS = 50
 
 def simulate_each_as_first(student_id: str) -> pd.DataFrame:
     """
