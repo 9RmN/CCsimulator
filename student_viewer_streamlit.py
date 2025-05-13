@@ -110,7 +110,11 @@ for i in range(1, 21):
         continue
     prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
     try:
-        prob_flat = flat_df[flat_df["希望科"] == hope]["通過確率（仮に第1希望として出した場合）"].values[0]
+    # 新：列名のフォールバックを設定して安全に取得
+    col_name = "通過確率（仮に第1希望として出した場合）"
+    if col_name not in flat_df.columns:
+        col_name = "通過確率"
+    prob_flat = flat_df[flat_df["希望科"] == hope][col_name].values[0]
     except IndexError:
         prob_flat = ""
     display.append({
