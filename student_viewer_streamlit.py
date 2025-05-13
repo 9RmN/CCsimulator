@@ -155,26 +155,36 @@ st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
 median_col = rank_df.columns[1]
 rank_df[median_col] = pd.to_numeric(rank_df[median_col], errors='coerce')
 top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
-chart_df = top15.reset_index().rename(columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'})
-# ベースチャートと数値ラベル
-base_chart = alt.Chart(chart_df).mark_bar().encode(
-    x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
-    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
-).properties(
-    width=600,  # 幅を調整して重なりを軽減
-    height=len(chart_df) * 30  # 行数に応じて高さを調整
-) * 30  # 行数に応じて高さを調整
+chart_df = top15.reset_index().rename(
+    columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'}
 )
 
-text = base_chart.mark_text(align='left', baseline='middle', dx=3).encode(
+# ベースチャートと数値ラベル
+base_chart = (
+    alt.Chart(chart_df)
+    .mark_bar()
+    .encode(
+        x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
+        y=alt.Y(
+            '診療科:N',
+            sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'),
+            title=None
+        )
+    )
+    .properties(
+        width=600,                 # 幅を調整
+        height=len(chart_df) * 30  # 行数に応じた高さ
+    )
+)
+
+text = base_chart.mark_text(
+    align='left', baseline='middle', dx=3
+).encode(
     text=alt.Text('抽選順位中央値:Q', format='.0f')
 )
 
-# Y軸ラベルを省略せず表示するためにラベル制限を解除
-layered = alt.layer(base_chart, text)
-layered = layered.configure_axisX(
-    labelFontSize=12, titleFontSize=14
-).configure_axisY(
+# Y軸ラベルの省略を防ぐ
+layered = alt.layer(base_chart, text).configure_axisY(
     labelFontSize=12,
     titleFontSize=14,
     labelAngle=0,
@@ -182,7 +192,8 @@ layered = layered.configure_axisX(
     labelLimit=300
 )
 
-st.altair_chart(layered, use_container_width=True)
+st.altair_chart(layered, use_container_width=False)
+
 
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
