@@ -8,6 +8,7 @@ on:
     types: [form_submitted]
   schedule:
     - cron: '*/15 * * * *'
+  workflow_dispatch: {}
 
 jobs:
   basic_update:
@@ -60,7 +61,7 @@ jobs:
   first_choice_sim:
     name: First-Choice Precompute
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
