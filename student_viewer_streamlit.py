@@ -161,8 +161,9 @@ base_chart = alt.Chart(chart_df).mark_bar().encode(
     x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
     y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
 ).properties(
-    width=800,  # 幅を広げて名称を表示
+    width=600,  # 幅を調整して重なりを軽減
     height=len(chart_df) * 30  # 行数に応じて高さを調整
+) * 30  # 行数に応じて高さを調整
 )
 
 text = base_chart.mark_text(align='left', baseline='middle', dx=3).encode(
@@ -182,6 +183,7 @@ layered = layered.configure_axisX(
 )
 
 st.altair_chart(layered, use_container_width=True)
+
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
 st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位")
