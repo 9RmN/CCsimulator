@@ -4,7 +4,7 @@ import random
 from collections import defaultdict
 
 # モンテカルロ回数
-N_SIMULATIONS = 50  # 少ない回数でもばらつきを得るため
+N_SIMULATIONS = 100
 
 def simulate_each_as_first(student_id: str) -> pd.DataFrame:
     """
@@ -37,9 +37,8 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
             if d and d != '-':
                 pop[d] += weight
     dept_list, counts = zip(*pop.items())
-
-    # Softmax で確率分布に変換
-    weights = softmax(counts, temperature=TEMPERATURE)
+    total = sum(counts)
+    weights = [c / total for c in counts]
 
     # 未回答者IDリスト
     answered_ids = set(others['student_id'])
@@ -84,13 +83,12 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
             full_responses_sim = pd.concat([others, gen_df, me_dummy], ignore_index=True)
             merged = full_responses_sim.merge(terms_lot, on='student_id')
             merged = merged.copy()
-            # 並び順に全体ジッターを導入
-            merged['_ord'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged)) * JITTER_SCALE
+            merged['_ord'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged)) * 0.01
             merged = merged.sort_values('_ord')
 
             # 割当シミュレーション
-            assigned_flag = False
             assigned = {}
+            assigned_flag = False
             for _, r in merged.iterrows():
                 sid = r['student_id']
                 used = assigned.get(sid, set())
@@ -106,7 +104,6 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
                         if cap.get(key, 0) > 0:
                             cap[key] -= 1
                             assigned.setdefault(sid, set()).add(dept)
-                            # 自分かつ target 科だったら success カウント
                             if sid == student_id and dept == target:
                                 success += 1
                                 assigned_flag = True
