@@ -93,25 +93,54 @@ if ratio < 70:
 # --- 通過確率比較テーブル (幅調整付き) ---
 st.subheader("🌀 通過確率比較 (順位あり / 全て第1希望)")
 
-# DataFrame 作成
+# 1) データ収集
+rows = []
+for i in range(1, 21):
+    hope = responses_df.loc[sid].get(f"hope_{i}")
+    if not hope:
+        continue
+
+    # 順位ありシミュレーションの確率
+    ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
+    ranked_str = f"{int(ranked)}%" if pd.notna(ranked) else ""
+
+    # 全て第1希望時の確率
+    flat_row = first_choice_df[first_choice_df["希望科"] == hope]
+    flat_str = ""
+    if not flat_row.empty:
+        pct = flat_row["通過確率"].iloc[0]
+        flat_str = f"{pct:.1f}%"
+
+    rows.append({
+        "希望":           f"{i}: {hope}",
+        "順位あり":       ranked_str,
+        "全て第1希望":    flat_str
+    })
+
+# 2) DataFrame 作成＆インデックス設定
 df = pd.DataFrame(rows).set_index("希望")
 
-# Styler で列幅をカスタマイズ
+# 3) 列幅スタイル設定
 styled = df.style.set_table_styles([
-    # インデックス（希望）のセル幅を広く
-    {'selector': 'th.row_heading, td.row_heading',
-     'props': [('min-width', '300px'), ('text-align','left')]},
-    # 「順位あり」列
-    {'selector': 'th.col_heading level0, th.col1, td.col1',
-     'props': [('min-width', '80px'), ('text-align','center')]},
-    # 「全て第1希望」列
-    {'selector': 'th.col2, td.col2',
-     'props': [('min-width', '80px'), ('text-align','center')]},
+    # インデックス（希望）を広く
+    {
+        'selector': 'th.row_heading, td.row_heading',
+        'props': [('min-width', '300px'), ('text-align', 'left')]
+    },
+    # 「順位あり」列を狭く
+    {
+        'selector': 'th.col_heading.col1, td.col1',
+        'props': [('min-width', '80px'), ('text-align', 'center')]
+    },
+    # 「全て第1希望」列も狭く
+    {
+        'selector': 'th.col_heading.col2, td.col2',
+        'props': [('min-width', '80px'), ('text-align', 'center')]
+    },
 ])
 
-# Streamlit で表示
-st.dataframe(styled, use_container_width=True)
-
+# 4) 表示
+st.write(styled)
 
 # --- 希望人数表示 ---
 st.subheader("📋 第1～3希望人数 (科ごと・Term1～Term11)")
