@@ -70,7 +70,7 @@ def main():
                 if val in assigned_depts:
                     counts[sid][idx] += w
 
-    # スムージング (ベイズ補正) を入れて確率化
+        # スムージング (ベイズ補正) を入れて確率化
     K = 2.0  # スムージングパラメータ
     output_rows = []
     for sid in student_ids:
@@ -78,8 +78,9 @@ def main():
         base = {'student_id': sid}
         for idx in range(1, len(hope_cols) + 1):
             num = counts[sid][idx]
-            # (成功数 + 1) / (重み合計×num_terms + K) * 100%
-            p = (num + 1.0) / (tw * num_terms + K) * 100.0
+            # (成功シミュレーション回数 + 1) / (重み合計 + K) * 100%
+            # 全タームではなく、シミュレーション単位で一致するかを確率化
+            p = (num + 1.0) / (tw + K) * 100.0
             base[f'hope_{idx}_確率'] = p
         output_rows.append(base)
 
@@ -88,8 +89,9 @@ def main():
         "probability_montecarlo_combined.csv", index=False
     )
     print(
-        f"Generated probability_montecarlo_combined.csv with {N} simulations, counting all {num_terms} terms and Bayesian smoothing (K={K})"
+        f"Generated probability_montecarlo_combined.csv with {N} simulations and Bayesian smoothing (K={K})"
     )
 
 if __name__ == '__main__':
+    main()
     main()
