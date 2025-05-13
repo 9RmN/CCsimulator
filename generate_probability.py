@@ -5,9 +5,15 @@ from collections import defaultdict
 from simulate_with_unanswered import run_simulation  # 関数化済みと仮定
 
 def main():
-    parser = argparse.ArgumentParser(description="Monte Carlo simulation for assignment probabilities")
-    parser.add_argument('--iterations', type=int, default=100,
-                        help='Number of Monte Carlo simulations (default: 100)')
+    parser = argparse.ArgumentParser(
+        description="Monte Carlo simulation for assignment probabilities"
+    )
+    parser.add_argument(
+        '--iterations',
+        type=int,
+        default=100,
+        help='Number of Monte Carlo simulations (default: 100)'
+    )
     args = parser.parse_args()
     N = args.iterations
 
@@ -15,7 +21,9 @@ def main():
     responses   = pd.read_csv("responses.csv",    dtype={'student_id': str})
     lottery     = pd.read_csv("lottery_order.csv",dtype={'student_id': str})
     capacity_df = pd.read_csv("department_capacity.csv")
-    terms_df    = pd.read_csv("student_terms.csv",dtype={'student_id': str})
+    terms_df    = pd.read_csv("student_terms.csv", dtype={'student_id': str})
+    # 追加：昨年配属結果を読み込む
+    hist_df     = pd.read_csv("2024配属結果.csv", dtype={'student_id': str})
 
     student_ids = responses['student_id'].tolist()
     hope_cols   = [c for c in responses.columns if c.startswith('hope_')]
@@ -30,7 +38,13 @@ def main():
 
     # モンテカルロシミュレーション
     for _ in range(N):
-        assign_df = run_simulation(responses, lottery, capacity_df, terms_df)
+        assign_df = run_simulation(
+            responses,
+            lottery,
+            capacity_df,
+            terms_df,
+            hist_df  # 追加引数
+        )
         assign_df['is_imputed'] = ~assign_df['student_id'].isin(answered)
 
         for sid in student_ids:
@@ -43,7 +57,9 @@ def main():
 
             # 希望順位のマッチを見つけたら重みを加算
             for idx, col in enumerate(hope_cols, start=1):
-                val = responses.loc[responses['student_id'] == sid, col].iloc[0]
+                val = responses.loc[
+                    responses['student_id'] == sid, col
+                ].iloc[0]
                 if pd.isna(val):
                     continue
                 if val == sub['assigned_department']:
@@ -64,8 +80,12 @@ def main():
         rows.append(base)
 
     df_prob = pd.DataFrame(rows)
-    df_prob.to_csv("probability_montecarlo_combined.csv", index=False)
-    print(f"Generated probability_montecarlo_combined.csv with {N} simulations and Bayesian smoothing (K={K})")
+    df_prob.to_csv(
+        "probability_montecarlo_combined.csv", index=False
+    )
+    print(
+        f"Generated probability_montecarlo_combined.csv with {N} simulations and Bayesian smoothing (K={K})"
+    )
 
 if __name__ == '__main__':
     main()
