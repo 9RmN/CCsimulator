@@ -4,7 +4,7 @@ import numpy as np
 import random
 from collections import defaultdict
 
-N_SIMULATIONS = 100
+N_SIMULATIONS = 50
 
 def compute_softmax_probs(scores: np.ndarray, temperature: float = 1.0) -> np.ndarray:
     z = scores / temperature
