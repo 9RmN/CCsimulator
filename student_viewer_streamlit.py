@@ -1,11 +1,14 @@
 import os
+import sys
 import streamlit as st
 import pandas as pd
 import numpy as np
 import hashlib
 import altair as alt
 import importlib
-import simulate_each_as_first  # 通過確率シミュレーション
+# Ensure current directory is in module path
+sys.path.insert(0, os.getcwd())
+import simulate_each_as_first  # 通過確率シミュレーション（仮に第1希望とした場合）
 
 # --- 自動リフレッシュ ---
 st.markdown('<meta http-equiv="refresh" content="900">', unsafe_allow_html=True)
@@ -36,8 +39,10 @@ def load_data():
     rank_df      = pd.read_csv("popular_departments_rank_combined.csv")
     terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id':str})
     responses_df = pd.read_csv("responses.csv", dtype={'student_id':str})
+    # 左ゼロ除去
     for df in [responses_df,prob_df,terms_df,auth_df]:
         df['student_id'] = df['student_id'].str.lstrip('0')
+    # インデックス設定
     responses_df.set_index('student_id',inplace=True)
     prob_df.set_index('student_id',inplace=True)
     terms_df.set_index('student_id',inplace=True)
@@ -46,7 +51,7 @@ def load_data():
 
 prob_df, auth_df, rank_df, terms_df, responses_df = load_data()
 
-# --- 認証 ---
+# --- 認証関数 ---
 def verify_user(sid, pwd):
     sid = sid.lstrip('0')
     if not sid.isdigit() or sid not in auth_df.index:
@@ -54,86 +59,122 @@ def verify_user(sid, pwd):
     row = auth_df.loc[sid]
     if row['role'] not in ['student','admin']:
         return False
-    return hashlib.sha256((pwd+PEPPER).encode()).hexdigest() == row['password_hash']
+    return hashlib.sha256((pwd + PEPPER).encode()).hexdigest() == row['password_hash']
 
+# --- ログイン画面 ---
 if not st.session_state['authenticated']:
+    st.title("🔐 ログイン")
     sid = st.text_input("学生番号", key="login_uid")
     pwd = st.text_input("パスワード", type="password", key="login_pwd")
     if st.button("ログイン"):
-        if verify_user(sid,pwd):
-            st.session_state['authenticated']=True
-            st.session_state['user_id']=sid.lstrip('0')
+        if verify_user(sid, pwd):
+            st.session_state['authenticated'] = True
+            st.session_state['user_id'] = sid.lstrip('0')
             st.experimental_rerun()
         else:
             st.error("認証に失敗しました。")
     st.stop()
 
-# --- 認証後画面 ---
+# --- 認証後メイン画面 ---
 sid = st.session_state['user_id']
 st.title(f"🎓 選択科アンケート (学生番号={sid})")
 
-# --- 回答状況表示 ---
+# 回答率表示
 all_count = len(terms_df)
 answered_count = responses_df.shape[0]
-ratio = answered_count/all_count*100
-st.markdown(f"🧾 **回答者：{answered_count}/{all_count}人** ({ratio:.1f}%)")
-if ratio<70:
-    st.warning("⚠️ 回答者が少ないため結果が不安定です。")
+ratio = answered_count / all_count * 100
+st.markdown(f"🧾 **回答者：{answered_count}/{all_count} 人**（{ratio:.1f}%）")
+if ratio < 70:
+    st.warning("⚠️ 回答者が少ないため結果が不安定です。回答を促してください。")
 
 # --- 通過確率シミュレーション ---
 st.subheader("🌀 通過確率（仮に第1希望とした場合）")
+# ボタン押下で再実行
 if st.button("♻️ シミュレーション実行"):
     simulate_each_as_first = importlib.reload(simulate_each_as_first)
     st.session_state['flat_df'] = simulate_each_as_first.simulate_each_as_first(sid)
+# 初回自動実行
 if st.session_state['flat_df'] is None:
     with st.spinner("初回シミュレーション実行中..."):
         st.session_state['flat_df'] = simulate_each_as_first.simulate_each_as_first(sid)
 flat_df = st.session_state['flat_df']
 
 # --- 希望科通過確率一覧 ---
-st.subheader("🎯 希望科通過確率一覧（順位あり/仮に第1希望）")
-display=[]
-for i in range(1,21):
+st.subheader("🎯 希望科通過確率一覧（順位あり / 仮に第1希望）")
+display = []
+for i in range(1, 21):
     hope = responses_df.loc[sid].get(f"hope_{i}")
-    if not hope: continue
-    pr = prob_df.loc[sid].get(f"hope_{i}_確率")
-    col="通過確率（仮に第1希望とした場合）"
-    if col not in flat_df.columns: col="通過確率"
-    pf = flat_df.loc[flat_df["希望科"]==hope, col].values[0] if hope in flat_df["希望科"].values else ""
-    display.append({'希望':f"{i}: {hope}",'順位あり':f"{int(pr)}%" if pd.notna(pr) else "",'仮1':pf})
+    if not hope:
+        continue
+    prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
+    col_name = "通過確率（仮に第1希望とした場合）"
+    if col_name not in flat_df.columns:
+        col_name = "通過確率"
+    prob_flat = (
+        flat_df.loc[flat_df["希望科"] == hope, col_name].values[0]
+        if hope in flat_df["希望科"].values else ""
+    )
+    display.append({
+        '希望': f"{i}: {hope}",
+        '順位あり': f"{int(prob_ranked)}%" if pd.notna(prob_ranked) else "",
+        '仮に第1希望': prob_flat
+    })
 st.dataframe(pd.DataFrame(display), use_container_width=True)
 
-# --- 人気診療科表示 ---
+# --- 希望人数表示 ---
+st.subheader("📋 第1～3希望人数 (科ごと・Term1～Term11)")
+try:
+    dept_summary = pd.read_csv("department_summary.csv", index_col=0)
+    st.dataframe(dept_summary, use_container_width=True)
+except FileNotFoundError:
+    st.warning("department_summary.csv が見つかりません。")
+
+# --- 人気診療科トップ15 ---
 st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
 median_col = rank_df.columns[1]
 rank_df[median_col] = pd.to_numeric(rank_df[median_col], errors='coerce')
 top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
 chart_df = top15.reset_index().rename(columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'})
-
-# バーを順位小さい順にソートし、右側に数値ラベルを表示
-chart = alt.Chart(chart_df).mark_bar().encode(
+# ベースチャートと数値ラベル
+base_chart = alt.Chart(chart_df).mark_bar().encode(
     x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
     y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
-).properties(width=700, height= max(300, len(chart_df)*25))
+).properties(width=700, height=max(300, len(chart_df)*25))
+text = base_chart.mark_text(align='left', baseline='middle', dx=3).encode(text=alt.Text('抽選順位中央値:Q'))
+layered = alt.layer(base_chart, text).configure_axis(labelFontSize=12, titleFontSize=14, labelAngle=0, labelAlign='right')
+st.altair_chart(layered, use_container_width=True)
 
-text = chart.mark_text(
-    align='left',
-    baseline='middle',
-    dx=3
-).encode(
-    text=alt.Text('抽選順位中央値:Q')
-)
-
-# 軸ラベルを回転して表示領域を確保し、表示名を完全に出す
-chart = chart.configure_axis(
-    labelFontSize=12,
-    titleFontSize=14,
-    labelAngle=0,
-    labelAlign='right'
-)
-
-st.altair_chart(chart + text, use_container_width=True)
-
-# --- 昨年上限に達した科の最大通過順位 ---
-st.subheader("🔖 昨年：配属上限に達した科の最大通過順位（バーグラフ）")
-# (以降略)
+# --- 昨年：一定割合以上配属された科の最大通過順位 ---
+st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位（バーグラフ）")
+# データ読み込み
+hist_df = pd.read_csv("2024配属結果.csv", dtype={'student_id':str, 'lottery_order':int})
+cap_df  = pd.read_csv("department_capacity.csv")
+# 長い形式に変換
+records = []
+term_cols = [c for c in hist_df.columns if c.startswith('term_')]
+for _, r in hist_df.iterrows():
+    rank = r['lottery_order']
+    for term in term_cols:
+        dept = r[term]
+        if pd.notna(dept) and dept not in ('','-'):
+            records.append({'department':dept,'lottery_order':rank})
+df_long2 = pd.DataFrame(records)
+# 部門ごと配属数
+assign_dept = df_long2.groupby('department',as_index=False).size().rename(columns={'size':'assigned_count'})
+# capacity合計
+cap_dept = (cap_df.melt(id_vars=['hospital_department'], value_vars=[c for c in cap_df.columns if c.startswith('term_')], var_name='term', value_name='capacity')
+                .groupby('hospital_department',as_index=False).agg({'capacity':'sum'}).rename(columns={'hospital_department':'department'}))
+# 配属率閾値
+threshold = st.slider('配属枠の何%以上が埋まった科を表示するか', min_value=0.0, max_value=1.0, value=0.7, step=0.05)
+# 合致科抽出
+depts_full = assign_dept.merge(cap_dept,on='department')
+reached = depts_full[depts_full['assigned_count'] >= depts_full['capacity']*threshold]['department']
+# 最大通過順位計算
+max_rank = (df_long2[df_long2['department'].isin(reached)].groupby('department',as_index=False)['lottery_order'].max()
+            .rename(columns={'lottery_order':'昨年の最大通過順位'}).sort_values('昨年の最大通過順位'))
+# バーグラフ
+chart2 = alt.Chart(max_rank).mark_bar().encode(
+    x=alt.X('昨年の最大通過順位:Q',title='最大通過順位'),
+    y=alt.Y('department:N',sort='-x',title='診療科')
+).properties(width=700, height=max(300, len(max_rank)*25))
+st.altair_chart(chart2, use_container_width=True)
