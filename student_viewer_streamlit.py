@@ -26,13 +26,11 @@ except Exception:
 
 # --- データロード ---
 @st.cache_data(ttl=60)
-# --- データロード ---
-@st.cache_data(ttl=60)
 def load_data():
-    prob_df = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id': str})
-    auth_df = pd.read_csv("auth.csv", dtype={'student_id': str, 'password_hash': str, 'role': str})
-    rank_df = pd.read_csv("popular_departments_rank_combined.csv")
-    terms_df = pd.read_csv("student_terms.csv", dtype={'student_id': str})
+    prob_df      = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id': str})
+    auth_df      = pd.read_csv("auth.csv", dtype={'student_id': str, 'password_hash': str, 'role': str})
+    rank_df      = pd.read_csv("popular_departments_rank_combined.csv")
+    terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id': str})
     responses_df = pd.read_csv("responses.csv", dtype={'student_id': str})
 
     for df in [responses_df, prob_df, terms_df, auth_df]:
@@ -80,9 +78,9 @@ sid = st.session_state['user_id']
 st.title(f"🎓 選択科アンケート (学生番号={sid})")
 
 # --- 回答状況表示 ---
-all_count = len(terms_df)
+all_count      = len(terms_df)
 answered_count = responses_df.shape[0]
-ratio = answered_count / all_count * 100
+ratio          = answered_count / all_count * 100
 st.markdown(f"🧾 **回答者：{answered_count} / {all_count}人**（{ratio:.1f}%）")
 if ratio < 70:
     st.warning("⚠️ 回答者が少ないため、結果がまだ不安定です。")
@@ -108,19 +106,22 @@ for i in range(1, 21):
     hope = responses_df.loc[sid].get(f"hope_{i}")
     if pd.isna(hope) or not hope:
         continue
+
     prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
+
     try:
-    # 新：列名のフォールバックを設定して安全に取得
-    col_name = "通過確率（仮に第1希望として出した場合）"
-    if col_name not in flat_df.columns:
-        col_name = "通過確率"
-    prob_flat = flat_df[flat_df["希望科"] == hope][col_name].values[0]
-    except IndexError:
+        # 新：列名のフォールバックを設定
+        col_name = "通過確率（仮に第1希望とした場合）"
+        if col_name not in flat_df.columns:
+            col_name = "通過確率"
+        prob_flat = flat_df.loc[flat_df["希望科"] == hope, col_name].values[0]
+    except Exception:
         prob_flat = ""
+
     display.append({
         '希望': f"{i}: {hope}",
         '順位あり': f"{int(prob_ranked)}%" if pd.notna(prob_ranked) else "",
-        '仮に第1希望にした場合': prob_flat
+        '仮に第1希望とした場合': prob_flat
     })
 
 df_disp = pd.DataFrame(display)
@@ -139,7 +140,7 @@ def color_prob(val):
     return ''
 
 st.dataframe(
-    df_disp.style.map(color_prob, subset=['順位あり', '仮に第1希望にした場合']),
+    df_disp.style.map(color_prob, subset=['順位あり', '仮に第1希望とした場合']),
     use_container_width=True
 )
 
