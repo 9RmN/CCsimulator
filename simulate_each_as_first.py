@@ -8,7 +8,7 @@ N_SIMULATIONS = 300
 def simulate_each_as_first(student_id):
     # --- データ読込 ---
     responses = pd.read_csv("responses.csv", dtype={'student_id': str})
-    lottery = pd.read_csv("lottery_order.csv", dtype={'student_id': str})
+    lottery = pd.read_csv("lottery_order.csv", dtype={'student_id': str, 'lottery_order': int})
     terms = pd.read_csv("student_terms.csv", dtype={'student_id': str})
     capacity = pd.read_csv("department_capacity.csv")
 
@@ -23,7 +23,12 @@ def simulate_each_as_first(student_id):
         raise ValueError("希望が入力されていません")
 
     my_terms = terms[terms["student_id"] == student_id].iloc[0][["term_1", "term_2", "term_3", "term_4"]].values
-    my_lottery = int(lottery[lottery["student_id"] == student_id]["lottery_order"].iloc[0])
+
+    lottery_row = lottery[lottery["student_id"] == student_id]
+    if lottery_row.empty:
+        raise ValueError("student_id が lottery_order.csv に存在しません")
+    my_lottery = int(lottery_row["lottery_order"].iloc[0])
+
     others = responses[responses["student_id"] != student_id]
 
     # --- popularity スコア生成（未回答者希望生成用） ---
@@ -81,7 +86,8 @@ def simulate_each_as_first(student_id):
                 for term in term_list:
                     for i in range(1, MAX_HOPES + 1):
                         d = r.get(f"hope_{i}", "")
-                        if pd.isna(d) or d in used: continue
+                        if pd.isna(d) or d in used:
+                            continue
                         key = (d, f"term_{term}")
                         if cap.get(key, 0) > 0:
                             cap[key] -= 1
