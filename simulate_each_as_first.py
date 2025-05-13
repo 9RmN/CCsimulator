@@ -4,18 +4,7 @@ import random
 from collections import defaultdict
 
 # モンテカルロ回数
-N_SIMULATIONS = 10  # 少ない回数でもばらつきを得るため
-# Softmax 温度パラメータ
-TEMPERATURE = 3.0
-# 並び順ジッター（倍率）
-JITTER_SCALE = 0.05
-
-def softmax(x, temperature=1.0):
-    """Softmax 関数（温度付き）"""
-    arr = np.array(x, dtype=float) / temperature
-    e = np.exp(arr - np.max(arr))
-    return (e / e.sum()).tolist()
-
+N_SIMULATIONS = 50  # 少ない回数でもばらつきを得るため
 
 def simulate_each_as_first(student_id: str) -> pd.DataFrame:
     """
