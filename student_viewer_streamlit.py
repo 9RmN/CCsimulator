@@ -8,7 +8,6 @@ import altair as alt
 import importlib
 # Ensure current directory is in module path
 sys.path.insert(0, os.getcwd())
-import simulate_each_as_first  # 通過確率シミュレーション（仮に第1希望とした場合）
 
 # --- 自動リフレッシュ ---
 st.markdown('<meta http-equiv="refresh" content="900">', unsafe_allow_html=True)
@@ -39,6 +38,7 @@ def load_data():
     rank_df      = pd.read_csv("popular_departments_rank_combined.csv")
     terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id':str})
     responses_df = pd.read_csv("responses.csv", dtype={'student_id':str})
+    first_choice_df = pd.read_csv("first_choice_probabilities.csv", dtype={'student_id':str})
     # 左ゼロ除去
     for df in [responses_df,prob_df,terms_df,auth_df]:
         df['student_id'] = df['student_id'].str.lstrip('0')
@@ -47,9 +47,11 @@ def load_data():
     prob_df.set_index('student_id',inplace=True)
     terms_df.set_index('student_id',inplace=True)
     auth_df.set_index('student_id',inplace=True)
-    return prob_df, auth_df, rank_df, terms_df, responses_df
+    first_choice_df['student_id'] = first_choice_df['student_id'].str.lstrip('0')
+    first_choice_df.set_index('student_id', inplace=True)
+    return prob_df, auth_df, rank_df, terms_df, responses_df, first_choice_df
 
-prob_df, auth_df, rank_df, terms_df, responses_df = load_data()
+prob_df, auth_df, rank_df, terms_df, responses_df, first_choice_df = load_data()
 
 # --- 認証関数 ---
 def verify_user(sid, pwd):
@@ -88,17 +90,22 @@ st.markdown(f"🧾 **回答者：{answered_count}/{all_count} 人**（{ratio:.1f
 if ratio < 70:
     st.warning("⚠️ 回答者が少ないため結果が不安定です。回答を促してください。")
 
-# --- 通過確率シミュレーション ---
-st.subheader("🌀 通過確率（仮に第1希望とした場合）")
-# ボタン押下で再実行
-if st.button("♻️ シミュレーション実行"):
-    simulate_each_as_first = importlib.reload(simulate_each_as_first)
-    st.session_state['flat_df'] = simulate_each_as_first.simulate_each_as_first(sid)
-# 初回自動実行
-if st.session_state['flat_df'] is None:
-    with st.spinner("初回シミュレーション実行中..."):
-        st.session_state['flat_df'] = simulate_each_as_first.simulate_each_as_first(sid)
-flat_df = st.session_state['flat_df']
+st.subheader("🌀 第1希望通過確率 (事前バッチ生成)")
+if sid in first_choice_df.index:
+    row = first_choice_df.loc[sid]
+    display = []
+    for i in range(1, 21):
+        hope = responses_df.loc[sid].get(f"hope_{i}")
+        if not hope:
+            continue
+        prob = row.get(f"hope_{i}_確率", np.nan)
+        display.append({
+            "希望": f"{i}: {hope}",
+            "第1希望通過確率": f"{prob:.1f}%"
+        })
+    st.dataframe(pd.DataFrame(display), use_container_width=True)
+else:
+    st.error("事前生成された第1希望通過確率データが見つかりません。")
 
 # --- 希望科通過確率一覧 ---
 st.subheader("🎯 希望科通過確率一覧（順位あり / 仮に第1希望）")
