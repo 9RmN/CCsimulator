@@ -70,9 +70,10 @@ if not st.session_state['authenticated']:
         if verify_user(sid, pwd):
             st.session_state['authenticated'] = True
             st.session_state['user_id'] = sid.lstrip('0')
-            st.experimental_rerun()
         else:
             st.error("認証に失敗しました。")
+    # ここで st.stop() すると、認証成功後に
+    # 同じリクエストで下のコードが続けて実行されます
     st.stop()
 
 # --- 認証後メイン画面 ---
