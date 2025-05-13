@@ -65,6 +65,10 @@ if not st.session_state['authenticated']:
             st.error("学生番号またはパスワードが間違っています")
     st.stop()
 
+st.write(f"入力された学籍番号: {sid}")
+st.write(f"auth_df.index のサンプル: {auth_df.index[:5].tolist()}")
+st.write(f"照合結果: {sid in auth_df.index}")
+
 # --- 認証後画面 ---
 sid = st.session_state['user_id']
 st.title(f"🎓 選択科アンケート (学生番号={sid})")
