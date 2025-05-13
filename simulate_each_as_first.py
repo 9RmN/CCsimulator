@@ -51,7 +51,8 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
             if choice not in picks:
                 picks.append(choice)
         row = {'student_id': uid}
-        for idx, d in enumerate(picks, start=1): row[f'hope_{idx}'] = d
+        for idx, d in enumerate(picks, start=1):
+            row[f'hope_{idx}'] = d
         gen_rows.append(row)
     gen_df = pd.DataFrame(gen_rows)
     full_responses = pd.concat([others, gen_df], ignore_index=True)
@@ -64,37 +65,56 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
         success = 0
         for _ in range(N_SIMULATIONS):
             # capacity reset
-            cap = {(r['hospital_department'], t): int(r[t]) if not pd.isna(r[t]) else 0
-                   for _, r in capacity.iterrows() for t in capacity.columns[1:]}
+            cap = { (r['hospital_department'], t): int(r[t]) if not pd.isna(r[t]) else 0
+                   for _, r in capacity.iterrows() for t in capacity.columns[1:] }
+
             # 他学生割当
             merged = full_responses.merge(terms_lot, on='student_id')
             # ジッターを加えて順序を微調整
             merged = merged.copy()
             merged['_ord'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged))*0.01
             merged = merged.sort_values('_ord')
+
             # 割当
             assigned = {}
             for _, r in merged.iterrows():
                 sid = r['student_id']
                 used = assigned.get(sid, set())
-                term = r['term']
-                for i in range(1, MAX_HOPES+1):
-                    dept = r.get(f'hope_{i}', '')
-                    if not dept or dept in used: continue
-                    key = (dept, f'term_{term}')
-                    if cap.get(key, 0) > 0:
-                        cap[key] -= 1
-                        assigned.setdefault(sid, set()).add(dept)
+                # student_terms.csv の term_1～term_4 を順に試し、いずれかの月で配属を試みる
+                for term_idx in range(1, 5):
+                    term_month = r.get(f'term_{term_idx}')
+                    if pd.isna(term_month):
+                        continue
+                    for i in range(1, MAX_HOPES+1):
+                        dept = r.get(f'hope_{i}', '')
+                        if not dept or dept in used:
+                            continue
+                        key = (dept, f'term_{int(term_month)}')
+                        if cap.get(key, 0) > 0:
+                            cap[key] -= 1
+                            assigned.setdefault(sid, set()).add(dept)
+                            break
+                    # １つでも配属できたら、次の学生へ
+                    if sid in assigned and assigned[sid]:
                         break
+
             # 自分の配当判定
-            my_terms = terms[terms['student_id']==student_id].iloc[0]
-            for i in range(1,5):
-                t = my_terms[f'term_{i}']
-                if cap.get((target, f'term_{t}'),0) > 0:
+            my_terms = terms.loc[terms['student_id']==student_id].iloc[0]
+            for term_idx in range(1, 5):
+                month = my_terms.get(f'term_{term_idx}')
+                if pd.isna(month):
+                    continue
+                if cap.get((target, f'term_{int(month)}'), 0) > 0:
                     success += 1
                     break
-        pct = round(success/N_SIMULATIONS*100, 1)
-        results.append({'student_id': student_id, '希望科': target, '通過確率': pct})
+
+        pct = round(success / N_SIMULATIONS * 100, 1)
+        results.append({
+            'student_id': student_id,
+            '希望科': target,
+            '通過確率': pct
+        })
+
     return pd.DataFrame(results)
 
 # === CLI: 並列で全回答者分を一気に生成 ===
@@ -102,8 +122,7 @@ if __name__ == '__main__':
     import os
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
-    # 回答者のみ
-    resp = pd.read_csv('responses.csv', dtype={'student_id':str})
+    resp = pd.read_csv('responses.csv', dtype={'student_id': str})
     sids = resp['student_id'].tolist()
 
     output = []
