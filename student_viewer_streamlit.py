@@ -101,52 +101,7 @@ except Exception as e:
 # --- 希望一覧＋通過確率比較 ---
 st.subheader("🎯 希望科通過確率一覧（順位あり / 仮に第1希望とした場合）")
 
-display = []
-for i in range(1, 21):
-    hope = responses_df.loc[sid].get(f"hope_{i}")
-    if pd.isna(hope) or not hope:
-        continue
-    prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
-    try:
-        col_name = "通過確率（仮に第1希望とした場合）"
-        if col_name not in flat_df.columns:
-            col_name = "通過確率"
-        prob_flat = flat_df.loc[flat_df["希望科"] == hope, col_name].values[0]
-    except Exception:
-        prob_flat = ""
-    display.append({
-        '希望': f"{i}: {hope}",
-        '順位あり': f"{int(prob_ranked)}%" if pd.notna(prob_ranked) else "",
-        '仮に第1希望とした場合': prob_flat
-    })
-
-df_disp = pd.DataFrame(display)
-
-def color_prob(val):
-    try:
-        num = float(val.rstrip('%'))
-        if num >= 80:
-            return 'background-color:#d4edda'
-        elif num >= 50:
-            return 'background-color:#fff3cd'
-        elif num > 0:
-            return 'background-color:#f8d7da'
-    except:
-        return ''
-    return ''
-
-st.dataframe(
-    df_disp.style.map(color_prob, subset=['順位あり', '仮に第1希望とした場合']),
-    use_container_width=True
-)
-
-# --- 希望人数表示 ---
-st.subheader("📋 第1～3希望人数 (科ごと・Term1～Term11)")
-try:
-    dept_summary = pd.read_csv("department_summary.csv", index_col=0)
-    st.dataframe(dept_summary, use_container_width=True)
-except FileNotFoundError:
-    st.warning("department_summary.csv が見つかりません。")
+# ... (略) ...
 
 # --- 人気診療科表示 ---
 st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
@@ -156,7 +111,7 @@ top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
 chart_df = top15.reset_index().rename(
     columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'}
 )
-# ソートを "昨年抽選順位中央値" 昇順にして有利な科を上に表示
+# 昇順ソート（有利順）
 chart = alt.Chart(chart_df).mark_bar().encode(
     x=alt.X('抽選順位中央値:Q'),
     y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'))
@@ -181,33 +136,35 @@ for _, r in hist_df.iterrows():
         dept = r[term]
         if pd.notna(dept) and dept not in ("","-"):
             records.append({"department": dept, "term": term, "lottery_order": rank})
+# long
+```python
 df_long2 = pd.DataFrame(records)
+# assign_counts
 assign_counts = (
-    df_long2
-    .groupby(["department","term"], as_index=False)
-    .size()
-    .rename(columns={"size": "assigned_count"})
+    df_long2.groupby(["department","term"], as_index=False)\
+             .size().rename(columns={"size": "assigned_count"})
 )
-cap_long = (
-    cap_df
-    .melt(
-        id_vars=["hospital_department"],
-        value_vars=[c for c in cap_df.columns if c.startswith("term_")],
-        var_name="term", value_name="capacity"
-    )
-    .rename(columns={"hospital_department": "department"})
-)
-# NaN を 0 に置き換えてから整数化
+# capacity long
+cap_long = cap_df.melt(
+    id_vars=["hospital_department"],
+    value_vars=[c for c in cap_df.columns if c.startswith("term_")],
+    var_name="term", value_name="capacity"
+).rename(columns={"hospital_department": "department"})
 cap_long["capacity"] = cap_long["capacity"].fillna(0).astype(int)
+# reached pairs
 full = assign_counts.merge(cap_long, on=["department","term"])
 reached = full[full["assigned_count"] >= full["capacity"]]
-max_rank = (
-    reached
-    .groupby("department", as_index=False)["lottery_order"]
-    .max()
-    .rename(columns={"lottery_order": "昨年の最大通過順位"})
-    .sort_values("昨年の最大通過順位")
+# filter df_long2 by reached
+df_reached = df_long2.merge(
+    reached[['department','term']], on=['department','term']
 )
+# compute max_rank
+max_rank = (
+    df_reached.groupby("department", as_index=False)["lottery_order"]
+             .max().rename(columns={"lottery_order": "昨年の最大通過順位"})
+             .sort_values("昨年の最大通過順位")
+)
+# bar chart
 chart2 = (
     alt.Chart(max_rank)
     .mark_bar()
@@ -215,9 +172,7 @@ chart2 = (
         x=alt.X("昨年の最大通過順位:Q", title="最大通過順位"),
         y=alt.Y("department:N", sort="-x", title="診療科")
     )
-    .properties(
-        width=800,
-        height=max(300, len(max_rank) * 20)
-    )
+    .properties(width=800, height=max(300, len(max_rank)*20))
 )
 st.altair_chart(chart2, use_container_width=True)
+```
