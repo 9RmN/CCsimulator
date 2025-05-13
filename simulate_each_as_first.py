@@ -4,7 +4,7 @@ import random
 from collections import defaultdict
 
 # モンテカルロ回数
-N_SIMULATIONS = 100
+N_SIMULATIONS = 10
 
 def simulate_each_as_first(student_id: str) -> pd.DataFrame:
     """
@@ -40,28 +40,13 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
     total = sum(counts)
     weights = [c / total for c in counts]
 
-    # 未回答者の補完（事前生成）
+    # 未回答者IDリスト
     answered_ids = set(others['student_id'])
     all_ids      = set(terms['student_id'])
-    unresp       = list(all_ids - answered_ids - {student_id})
-    gen_rows = []
-    for uid in unresp:
-        picks = []
-        while len(picks) < MAX_HOPES:
-            choice = random.choices(dept_list, weights=weights, k=1)[0]
-            if choice not in picks:
-                picks.append(choice)
-        row = {'student_id': uid}
-        for i, d in enumerate(picks, start=1):
-            row[f'hope_{i}'] = d
-        gen_rows.append(row)
-    gen_df = pd.DataFrame(gen_rows)
+    unresp_ids   = list(all_ids - answered_ids - {student_id})
 
     # terms と lottery 結合
     terms_lot = terms.merge(lottery, on='student_id')
-
-    # ベース full_responses
-    base_full = pd.concat([others, gen_df], ignore_index=True)
 
     results = []
     for target in hopes:
@@ -73,26 +58,40 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
                 for _, r in capacity.iterrows() for t in capacity.columns[1:]
             }
 
-            # full_responses に自分のダミー行を追加
+            # --- 毎回未回答者の希望を再生成 ---
+            gen_rows = []
+            for uid in unresp_ids:
+                picks = []
+                while len(picks) < MAX_HOPES:
+                    choice = random.choices(dept_list, weights=weights, k=1)[0]
+                    if choice not in picks:
+                        picks.append(choice)
+                row = {'student_id': uid}
+                for i, d in enumerate(picks, start=1):
+                    row[f'hope_{i}'] = d
+                gen_rows.append(row)
+            gen_df = pd.DataFrame(gen_rows)
+
+            # 自分のダミー希望行
             dummy = {'student_id': student_id}
             for c in hope_cols:
                 dummy[c] = ''
             dummy[hope_cols[0]] = target
             me_dummy = pd.DataFrame([dummy])
-            full_responses_sim = pd.concat([base_full, me_dummy], ignore_index=True)
 
-            # 他学生＋自分で割当
+            # 割当対象を組み立て
+            full_responses_sim = pd.concat([others, gen_df, me_dummy], ignore_index=True)
             merged = full_responses_sim.merge(terms_lot, on='student_id')
             merged = merged.copy()
             merged['_ord'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged)) * 0.01
             merged = merged.sort_values('_ord')
 
+            # 割当シミュレーション
             assigned = {}
             assigned_flag = False
             for _, r in merged.iterrows():
                 sid = r['student_id']
                 used = assigned.get(sid, set())
-                # term_1～term_4 それぞれで配属を試みる
                 for term_idx in range(1, 5):
                     term_month = r.get(f'term_{term_idx}')
                     if pd.isna(term_month):
@@ -105,7 +104,6 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
                         if cap.get(key, 0) > 0:
                             cap[key] -= 1
                             assigned.setdefault(sid, set()).add(dept)
-                            # 自分かつ target 科だったら success カウント
                             if sid == student_id and dept == target:
                                 success += 1
                                 assigned_flag = True
