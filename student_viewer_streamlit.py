@@ -5,21 +5,24 @@ import numpy as np
 import hashlib
 import altair as alt
 import importlib
-import simulate_each_as_first  # 通過確率シミュレーション（仮に第1希望とした場合）
+import simulate_each_as_first  # 通過確率シミュレーション
 
 # --- 自動リフレッシュ ---
 st.markdown('<meta http-equiv="refresh" content="900">', unsafe_allow_html=True)
 
 # --- セッションステート初期化 ---
-if 'authenticated' not in st.session_state:
+for key in ['authenticated','user_id','flat_df']:
+    if key not in st.session_state:
+        st.session_state[key] = None
+if st.session_state['authenticated'] is None:
     st.session_state['authenticated'] = False
-if 'user_id' not in st.session_state:
+if st.session_state['user_id'] is None:
     st.session_state['user_id'] = ''
 
 # --- Pepper の取得 ---
 try:
     PEPPER = st.secrets['auth']['pepper']
-except Exception:
+except:
     PEPPER = os.environ.get('PEPPER')
     if not PEPPER:
         st.error("⚠️ Pepper が設定されていません。認証に失敗します。")
@@ -28,50 +31,41 @@ except Exception:
 # --- データロード ---
 @st.cache_data(ttl=60)
 def load_data():
-    prob_df      = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id': str})
-    auth_df      = pd.read_csv("auth.csv", dtype={'student_id': str, 'password_hash': str, 'role': str})
+    prob_df      = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id':str})
+    auth_df      = pd.read_csv("auth.csv", dtype={'student_id':str,'password_hash':str,'role':str})
     rank_df      = pd.read_csv("popular_departments_rank_combined.csv")
-    terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id': str})
-    responses_df = pd.read_csv("responses.csv", dtype={'student_id': str})
-
-    for df in [responses_df, prob_df, terms_df, auth_df]:
+    terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id':str})
+    responses_df = pd.read_csv("responses.csv", dtype={'student_id':str})
+    for df in [responses_df,prob_df,terms_df,auth_df]:
         df['student_id'] = df['student_id'].str.lstrip('0')
-
-    responses_df.set_index('student_id', inplace=True)
-    prob_df.set_index('student_id', inplace=True)
-    terms_df.set_index('student_id', inplace=True)
-    auth_df.set_index('student_id', inplace=True)
-
+    responses_df.set_index('student_id',inplace=True)
+    prob_df.set_index('student_id',inplace=True)
+    terms_df.set_index('student_id',inplace=True)
+    auth_df.set_index('student_id',inplace=True)
     return prob_df, auth_df, rank_df, terms_df, responses_df
 
-# --- データ読み込み ---
 prob_df, auth_df, rank_df, terms_df, responses_df = load_data()
 
 # --- 認証 ---
 def verify_user(sid, pwd):
     sid = sid.lstrip('0')
-    if not sid.isdigit():
-        return False
-    if sid not in auth_df.index:
+    if not sid.isdigit() or sid not in auth_df.index:
         return False
     row = auth_df.loc[sid]
-    if row['role'] not in ['student', 'admin']:
+    if row['role'] not in ['student','admin']:
         return False
-    hashed = hashlib.sha256((pwd + PEPPER).encode()).hexdigest()
-    return hashed == row['password_hash']
+    return hashlib.sha256((pwd+PEPPER).encode()).hexdigest() == row['password_hash']
 
 if not st.session_state['authenticated']:
-    st.title("🔐 ログイン")
-    sid = st.text_input("学生番号", value="", key="login_uid")
+    sid = st.text_input("学生番号", key="login_uid")
     pwd = st.text_input("パスワード", type="password", key="login_pwd")
     if st.button("ログイン"):
-        with st.spinner("ログイン中... シミュレーションの準備に少し時間がかかることがあります"):
-            if verify_user(sid, pwd):
-                st.session_state['authenticated'] = True
-                st.session_state['user_id'] = sid.lstrip('0')
-                st.success(f"認証成功: 学生番号={sid.lstrip('0')}")
-            else:
-                st.error("学生番号またはパスワードが間違っています")
+        if verify_user(sid,pwd):
+            st.session_state['authenticated']=True
+            st.session_state['user_id']=sid.lstrip('0')
+            st.experimental_rerun()
+        else:
+            st.error("認証に失敗しました。")
     st.stop()
 
 # --- 認証後画面 ---
@@ -79,25 +73,23 @@ sid = st.session_state['user_id']
 st.title(f"🎓 選択科アンケート (学生番号={sid})")
 
 # --- 回答状況表示 ---
-all_count      = len(terms_df)
+all_count = len(terms_df)
 answered_count = responses_df.shape[0]
-ratio          = answered_count / all_count * 100
-st.markdown(f"🧾 **回答者：{answered_count} / {all_count}人**（{ratio:.1f}%）")
-if ratio < 70:
-    st.warning("⚠️ 回答者が少ないため、結果がまだ不安定です。")
+ratio = answered_count/all_count*100
+st.markdown(f"🧾 **回答者：{answered_count}/{all_count}人** ({ratio:.1f}%)")
+if ratio<70:
+    st.warning("⚠️ 回答者が少ないため結果が不安定です。")
 
-# --- 通過確率シミュレーション実行 ---
+# --- 通過確率シミュレーション ---
 st.subheader("🌀 通過確率（仮に第1希望とした場合）")
-if st.button("♻️ 再シミュレーションを実行"):
+if st.button("♻️ シミュレーション実行"):  # ボタン押下時のみ再実行
     simulate_each_as_first = importlib.reload(simulate_each_as_first)
-    st.success("再シミュレーションを実行しました。")
+    st.session_state['flat_df'] = simulate_each_as_first.simulate_each_as_first(sid)
 
-try:
-    with st.spinner("シミュレーションを実行中です..."):
-        flat_df = simulate_each_as_first.simulate_each_as_first(sid)
-except Exception as e:
-    st.error(f"シミュレーションエラー: {e}")
-    st.stop()
+if st.session_state['flat_df'] is None:
+    with st.spinner("初回シミュレーション実行中..."):
+        st.session_state['flat_df'] = simulate_each_as_first.simulate_each_as_first(sid)
+flat_df = st.session_state['flat_df']
 
 # --- 希望一覧＋通過確率比較 ---
 st.subheader("🎯 希望科通過確率一覧（順位あり / 仮に第1希望とした場合）")
