@@ -7,7 +7,7 @@ import importlib
 import simulate_self_flat  # 自作モジュール
 
 # --- 自動リフレッシュ ---
-st.markdown('<meta http-equiv="refresh" content="900">', unsafe_allow_html=True
+st.markdown('<meta http-equiv="refresh" content="900">', unsafe_allow_html=True)
 
 # --- セッションステート初期化 ---
 if 'authenticated' not in st.session_state:
