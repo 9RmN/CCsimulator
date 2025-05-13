@@ -3,7 +3,7 @@ import pandas as pd
 import random
 from collections import defaultdict
 
-N_SIMULATIONS = 300
+N_SIMULATIONS = 100
 
 def simulate_each_as_first(student_id):
     # --- データ読込 ---
