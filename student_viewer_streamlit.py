@@ -185,7 +185,9 @@ text = chart.mark_text(align='left', baseline='middle', dx=3).encode(
 )
 
 # 左余白を追加してラベルと干渉しないようにする
-combined = (chart + text).configure_view(padding={'left': 100})
+combined = (chart + text).properties(
+    margin={'left': 100}  # 左余白を100px確保
+)
 
 # 表示（固定幅）
 st.altair_chart(combined, use_container_width=False)
