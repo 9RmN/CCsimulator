@@ -75,7 +75,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Generate First Choice Probabilities
-        run: python scripts/generate_first_choice_probs.py
+        run: python simulate_each_as_first.py
 
       - name: Commit first-choice CSV
         env:
