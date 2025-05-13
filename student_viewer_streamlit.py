@@ -3,12 +3,10 @@ import streamlit as st
 import pandas as pd
 import hashlib
 import altair as alt
+from simulate_self_flat import simulate_self_flat  # <- 事前にこのモジュールが必要です
 
 # --- Streamlit 自動リフレッシュ ---
-st.markdown(
-    '<meta http-equiv="refresh" content="300">',
-    unsafe_allow_html=True,
-)
+st.markdown('<meta http-equiv="refresh" content="300">', unsafe_allow_html=True)
 
 # --- セッションステート 初期化 ---
 if 'authenticated' not in st.session_state:
@@ -31,23 +29,11 @@ except Exception:
 # --- データロード ---
 @st.cache_data(ttl=60)
 def load_data():
-    prob_df = pd.read_csv(
-        "probability_montecarlo_combined.csv",
-        dtype={'student_id': str}
-    )
-    auth_df = pd.read_csv(
-        "auth.csv",
-        dtype={'student_id': str, 'password_hash': str, 'role': str}
-    )
+    prob_df = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id': str})
+    auth_df = pd.read_csv("auth.csv", dtype={'student_id': str, 'password_hash': str, 'role': str})
     rank_df = pd.read_csv("popular_departments_rank_combined.csv")
-    terms_df = pd.read_csv(
-        "student_terms.csv",
-        dtype={'student_id': str}
-    )
-    responses_df = pd.read_csv(
-        "responses.csv",
-        dtype={'student_id': str}
-    )
+    terms_df = pd.read_csv("student_terms.csv", dtype={'student_id': str})
+    responses_df = pd.read_csv("responses.csv", dtype={'student_id': str})
 
     # 正規化
     responses_df['student_id'] = responses_df['student_id'].str.lstrip('0')
@@ -67,10 +53,7 @@ prob_df, auth_df, rank_df, terms_df, responses_df = load_data()
 def verify_user(sid, pwd):
     if not sid.isdigit():
         return False
-    row = auth_df[
-        (auth_df['student_id'] == sid) &
-        (auth_df['role'].isin(['student','admin']))
-    ]
+    row = auth_df[(auth_df['student_id'] == sid) & (auth_df['role'].isin(['student','admin']))]
     if row.empty:
         return False
     hashed = hashlib.sha256((pwd + PEPPER).encode()).hexdigest()
@@ -102,19 +85,28 @@ st.markdown(f"🧾 **回答者：{answered_count} / {all_count}人**（{answered
 if answered_ratio < 70:
     st.warning("⚠️ 回答者が少ないため、結果がまだ不安定です。")
 
-# 希望科＆通過確率表示
-st.subheader("🎯 希望科通過確率一覧 (第1〜20希望)")
+# --- 通過確率（順位あり/なし）表示 ---
+st.subheader("🎯 希望科通過確率一覧（順位あり / 順位なし）")
+@st.cache_data(ttl=3600)
+def run_flat_sim(student_id):
+    return simulate_self_flat(student_id)
+
+flat_result = run_flat_sim(sid)
 display = []
 for i in range(1, 21):
     hope = responses_df.loc[sid].get(f"hope_{i}") if sid in responses_df.index else None
     if not hope or pd.isna(hope):
         continue
-    prob = prob_df.loc[sid].get(f"hope_{i}_確率") if sid in prob_df.index else None
-    label = f"{int(prob)}%" if pd.notna(prob) else ""
+    prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率") if sid in prob_df.index else None
+    prob_flat = flat_result.get(hope)
+    label_ranked = f"{int(prob_ranked)}%" if pd.notna(prob_ranked) else ""
+    label_flat = f"{prob_flat:.0f}%" if prob_flat is not None else ""
     display.append({
-        '希望順位': f"第{i}希望: {hope}",
-        '通過確率': label
+        '希望': f"{i}:{hope}",
+        '順位あり': label_ranked,
+        '順位なし': label_flat
     })
+
 df_disp = pd.DataFrame(display)
 
 # 色付け関数
@@ -132,7 +124,7 @@ def color_prob(val):
     return ''
 
 st.dataframe(
-    df_disp.style.map(color_prob, subset=['通過確率']),
+    df_disp.style.map(color_prob, subset=['順位あり', '順位なし']),
     use_container_width=True
 )
 
