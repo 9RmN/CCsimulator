@@ -4,7 +4,7 @@ import random
 from collections import defaultdict
 
 # モンテカルロ回数
-N_SIMULATIONS = 50  # 少ない回数でもばらつきを得るため
+N_SIMULATIONS = 10  # 少ない回数でもばらつきを得るため
 # Softmax 温度パラメータ
 TEMPERATURE = 3.0
 # 並び順ジッター（倍率）
