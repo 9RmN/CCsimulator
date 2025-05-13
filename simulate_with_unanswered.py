@@ -9,49 +9,39 @@ def run_simulation(responses_base: pd.DataFrame,
                    terms_df: pd.DataFrame,
                    hist_df=None) -> pd.DataFrame:
     """
-    Perform assignment simulation including imputed responses for non-respondents.
-
-    :param responses_base: DataFrame with columns ['student_id', 'hope_1', ..., 'hope_N']
-    :param lottery_df: DataFrame with ['student_id', 'lottery_order']
-    :param capacity_df: DataFrame with ['hospital_department', 'term_1', ..., 'term_M']
-    :param terms_df: DataFrame with ['student_id', 'term_1', ..., 'term_M']
-    :param hist_df: (optional) DataFrame of last year's assignments, unused here
-    :return: DataFrame of assignment results with columns
-             ['student_id','term','assigned_department','hope_rank','is_imputed']
+    Perform assignment simulation including imputed responses for non-respondents,
+    with added randomness in assignment for students with the same lottery_order.
     """
-    # Determine maximum number of hopes and term labels
+    # --- Setup ---
     hope_cols = [c for c in responses_base.columns if c.startswith('hope_')]
     MAX_HOPES = max(int(c.split('_')[1]) for c in hope_cols)
     term_labels = [c for c in terms_df.columns if c.startswith('term_')]
 
-    # Build popularity score from actual responses
+    # --- Popularity scores for imputation ---
     popularity = defaultdict(int)
-    for i in range(1, MAX_HOPES + 1):
+    for i in range(1, MAX_HOPES+1):
         w = MAX_HOPES + 1 - i
         col = f'hope_{i}'
-        if col in responses_base:
-            for dept in responses_base[col].dropna():
-                if dept and dept != "-":
-                    popularity[dept] += w
+        for dept in responses_base.get(col, pd.Series()).dropna():
+            if dept and dept != '-':
+                popularity[dept] += w
 
-    # IDs for imputation
+    # --- Identify non-respondents ---
     answered_ids = set(responses_base['student_id'])
     all_ids      = set(terms_df['student_id'])
     unresp_ids   = list(all_ids - answered_ids)
-    unresp_df    = lottery_df[lottery_df['student_id'].isin(unresp_ids)]
 
-    # Prepare departments and weights for random sampling
+    # --- Prepare sampling ---
     dept_list, counts = zip(*popularity.items())
     total = sum(counts)
     weights = [c/total for c in counts]
 
-    # Generate imputed responses (no duplicates in each student's list)
+    # --- Impute hopes for non-respondents (no duplicates) ---
     generated = []
-    for sid in unresp_df['student_id']:
+    for sid in unresp_ids:
         row = {'student_id': sid}
         picks = []
         while len(picks) < MAX_HOPES:
-            # weighted random draw with replacement
             choice = random.choices(dept_list, weights=weights, k=1)[0]
             if choice not in picks:
                 picks.append(choice)
@@ -61,30 +51,41 @@ def run_simulation(responses_base: pd.DataFrame,
     imputed_df = pd.DataFrame(generated)
     imputed_df['is_imputed'] = True
 
-    # Combine actual and imputed responses
-    responses_base = responses_base.copy()
-    responses_base['is_imputed'] = False
-    all_responses = pd.concat([responses_base, imputed_df], ignore_index=True)
+    # --- Combine real and imputed ---
+    real_df = responses_base.copy()
+    real_df['is_imputed'] = False
+    all_responses = pd.concat([real_df, imputed_df], ignore_index=True)
 
-    # Perform assignment logic term by term
+    # --- Assignment ---
     assignment = []
-    # Reset capacities for each simulation
     for term_label in term_labels:
-        # Build capacity dict
+        # Reset capacities
         cap = {}
         for _, r in capacity_df.iterrows():
             dept = r['hospital_department']
             for t in term_labels:
                 cap[(dept, t)] = int(r[t]) if not pd.isna(r[t]) else 0
-        # Merge responses with terms and lottery, sort by lottery_order
+
+                # Prepare merged DataFrame
         term_map = terms_df[['student_id', term_label]].rename(columns={term_label:'term'})
         merged = (
             all_responses
             .merge(term_map, on='student_id')
             .merge(lottery_df, on='student_id')
-            .sort_values('lottery_order')
         )
-        # Assign
+        # Introduce small jitter to lottery_order to randomize allocation order
+        merged = merged.copy()
+        # Add uniform random noise less than 1 to preserve general order but allow shuffling
+        merged['_jittered_order'] = (
+            merged['lottery_order'].astype(float)
+            + np.random.rand(len(merged))
+        )
+        # Sort by jittered order
+        merged = merged.sort_values('_jittered_order')
+        # Drop helper column
+        merged = merged.drop(columns=['_jittered_order'])
+
+        # Allocate
         assigned = {}
         for _, row in merged.iterrows():
             sid = row['student_id']
@@ -93,12 +94,13 @@ def run_simulation(responses_base: pd.DataFrame,
             placed = False
             for i in range(1, MAX_HOPES+1):
                 dept = row.get(f'hope_{i}', '')
-                if pd.isna(dept) or not dept or dept in used:
+                if not dept or dept in used:
                     continue
                 key = (dept, f'term_{term}')
                 if cap.get(key, 0) > 0:
                     cap[key] -= 1
-                    assigned.setdefault(sid, set()).add(dept)
+                    used.add(dept)
+                    assigned[sid] = used
                     assignment.append({
                         'student_id': sid,
                         'term': term,
@@ -116,4 +118,5 @@ def run_simulation(responses_base: pd.DataFrame,
                     'hope_rank': None,
                     'is_imputed': bool(row['is_imputed'])
                 })
+
     return pd.DataFrame(assignment)
