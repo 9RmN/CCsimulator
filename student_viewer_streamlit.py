@@ -26,24 +26,27 @@ except Exception:
 
 # --- データロード ---
 @st.cache_data(ttl=60)
+# --- データロード ---
+@st.cache_data(ttl=60)
 def load_data():
     prob_df = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id': str})
     auth_df = pd.read_csv("auth.csv", dtype={'student_id': str, 'password_hash': str, 'role': str})
     rank_df = pd.read_csv("popular_departments_rank_combined.csv")
     terms_df = pd.read_csv("student_terms.csv", dtype={'student_id': str})
     responses_df = pd.read_csv("responses.csv", dtype={'student_id': str})
-    lottery_df = pd.read_csv("lottery_order.csv", dtype={'student_id': str, 'lottery_order': int})  # 追加
 
-    for df in [responses_df, prob_df, terms_df, auth_df, lottery_df]:  # 追加
+    for df in [responses_df, prob_df, terms_df, auth_df]:
         df['student_id'] = df['student_id'].str.lstrip('0')
 
     responses_df.set_index('student_id', inplace=True)
     prob_df.set_index('student_id', inplace=True)
     terms_df.set_index('student_id', inplace=True)
     auth_df.set_index('student_id', inplace=True)
-    lottery_df.set_index('student_id', inplace=True)  # 追加
 
-    return prob_df, auth_df, rank_df, terms_df, responses_df, lottery_df  # 追加
+    return prob_df, auth_df, rank_df, terms_df, responses_df
+
+# --- ここで先にデータ読み込みしておく ---
+prob_df, auth_df, rank_df, terms_df, responses_df = load_data()
 
 # --- 認証 ---
 def verify_user(sid, pwd):
