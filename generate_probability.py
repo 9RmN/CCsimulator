@@ -32,7 +32,7 @@ def main():
     counts        = {sid: defaultdict(float) for sid in student_ids}
     total_weights = {sid: 0.0 for sid in student_ids}
 
-    # 回答率計算（補完の重み w_impute = answered_ratio）
+    # 回答済/未回答者の判別と補完重み
     answered       = set(responses['student_id'])
     answered_ratio = len(answered) / len(terms_df)
 
@@ -51,35 +51,34 @@ def main():
             rows = assign_df[assign_df['student_id'] == sid]
             if rows.empty:
                 continue
-            sub = rows.iloc[0]
-            w   = 1.0 if not sub['is_imputed'] else answered_ratio
+            # 回答済は重み1、未回答は回答率を重み
+            w = 1.0 if sid in answered else answered_ratio
             total_weights[sid] += w
 
-            # 希望順位のマッチを見つけたら重みを加算
+            # 全ターム分の割当先をセットに
+            assigned_depts = set(rows['assigned_department']) - {None, '未配属'}
+            # 希望順位ごとに最初のマッチで重みを加算
             for idx, col in enumerate(hope_cols, start=1):
-                val = responses.loc[
-                    responses['student_id'] == sid, col
-                ].iloc[0]
+                val = responses.loc[responses['student_id'] == sid, col].iloc[0]
                 if pd.isna(val):
                     continue
-                if val == sub['assigned_department']:
+                if val in assigned_depts:
                     counts[sid][idx] += w
                     break
 
     # スムージング (ベイズ補正) を入れて確率化
     K = 2.0  # スムージングパラメータ
-    rows = []
+    output_rows = []
     for sid in student_ids:
         tw = total_weights[sid] or 1.0
-        base = {'student_id': sid}
+        row = {'student_id': sid}
         for idx in range(1, len(hope_cols) + 1):
             num = counts[sid][idx]
-            # (成功数 + 1) / (重み合計 + K) * 100%
             p = (num + 1.0) / (tw + K) * 100.0
-            base[f'hope_{idx}_確率'] = p
-        rows.append(base)
+            row[f'hope_{idx}_確率'] = p
+        output_rows.append(row)
 
-    df_prob = pd.DataFrame(rows)
+    df_prob = pd.DataFrame(output_rows)
     df_prob.to_csv(
         "probability_montecarlo_combined.csv", index=False
     )
