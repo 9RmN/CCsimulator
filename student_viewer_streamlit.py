@@ -90,36 +90,28 @@ st.markdown(f"🧾 **回答者：{answered_count}/{all_count} 人**（{ratio:.1f
 if ratio < 70:
     st.warning("⚠️ 回答者が少ないため結果が不安定です。回答を促してください。")
 
-# --- 通過確率比較テーブル (順位あり vs 全て第1希望) ---
+# --- 通過確率比較テーブル (幅調整付き) ---
 st.subheader("🌀 通過確率比較 (順位あり / 全て第1希望)")
 
-rows = []
-for i in range(1, 21):
-    hope = responses_df.loc[sid].get(f"hope_{i}")
-    if not hope:
-        continue
+# DataFrame 作成
+df = pd.DataFrame(rows).set_index("希望")
 
-    # 順位ありシミュレーションの確率
-    ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
-    ranked_str = f"{int(ranked)}%" if pd.notna(ranked) else ""
+# Styler で列幅をカスタマイズ
+styled = df.style.set_table_styles([
+    # インデックス（希望）のセル幅を広く
+    {'selector': 'th.row_heading, td.row_heading',
+     'props': [('min-width', '300px'), ('text-align','left')]},
+    # 「順位あり」列
+    {'selector': 'th.col_heading level0, th.col1, td.col1',
+     'props': [('min-width', '80px'), ('text-align','center')]},
+    # 「全て第1希望」列
+    {'selector': 'th.col2, td.col2',
+     'props': [('min-width', '80px'), ('text-align','center')]},
+])
 
-    # 第1希望バッチ生成の Flat シミュレーション確率
-    flat_row = first_choice_df[first_choice_df["希望科"] == hope]
-    flat_str = ""
-    if not flat_row.empty:
-        pct = flat_row["通過確率"].iloc[0]
-        flat_str = f"{pct:.1f}%"
+# Streamlit で表示
+st.dataframe(styled, use_container_width=True)
 
-    rows.append({
-        "希望":      f"{i}: {hope}",
-        "順位あり":  ranked_str,
-        "全て第1希望": flat_str
-    })
-
-st.dataframe(
-    pd.DataFrame(rows).set_index("希望"),
-    use_container_width=True
-)
 
 # --- 希望人数表示 ---
 st.subheader("📋 第1～3希望人数 (科ごと・Term1～Term11)")
