@@ -185,6 +185,8 @@ cap_dept = (
 )
 
 # 上限に達したdeptのみ抽出（しきい値によるフィルタリング）
+# departmentごとの上限達成マージ(depts_full)を準備
+depts_full = assign_dept.merge(cap_dept, on='department')
 # capacity の阈値スライダー（例：70%）
 threshold = st.slider(
     "配属枠の何%以上が埋まった科を表示するか", min_value=0.0, max_value=1.0, value=0.7, step=0.05
