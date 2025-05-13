@@ -90,44 +90,36 @@ st.markdown(f"🧾 **回答者：{answered_count}/{all_count} 人**（{ratio:.1f
 if ratio < 70:
     st.warning("⚠️ 回答者が少ないため結果が不安定です。回答を促してください。")
 
-st.subheader("🌀 第1希望通過確率 (事前バッチ生成)")
-if sid in first_choice_df.index:
-    row = first_choice_df.loc[sid]
-    display = []
-    for i in range(1, 21):
-        hope = responses_df.loc[sid].get(f"hope_{i}")
-        if not hope:
-            continue
-        prob = row.get(f"hope_{i}_確率", np.nan)
-        display.append({
-            "希望": f"{i}: {hope}",
-            "第1希望通過確率": f"{prob:.1f}%"
-        })
-    st.dataframe(pd.DataFrame(display), use_container_width=True)
-else:
-    st.error("事前生成された第1希望通過確率データが見つかりません。")
+# --- 通過確率比較テーブル (順位あり vs 全て第1希望) ---
+st.subheader("🌀 通過確率比較 (順位あり / 全て第1希望)")
 
-# --- 希望科通過確率一覧 ---
-st.subheader("🎯 希望科通過確率一覧（順位あり / 仮に第1希望）")
-display = []
+rows = []
 for i in range(1, 21):
     hope = responses_df.loc[sid].get(f"hope_{i}")
     if not hope:
         continue
-    prob_ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
-    col_name = "通過確率（仮に第1希望とした場合）"
-    if col_name not in flat_df.columns:
-        col_name = "通過確率"
-    prob_flat = (
-        flat_df.loc[flat_df["希望科"] == hope, col_name].values[0]
-        if hope in flat_df["希望科"].values else ""
-    )
-    display.append({
-        '希望': f"{i}: {hope}",
-        '順位あり': f"{int(prob_ranked)}%" if pd.notna(prob_ranked) else "",
-        '仮に第1希望': prob_flat
+
+    # 順位ありシミュレーションの確率
+    ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
+    ranked_str = f"{int(ranked)}%" if pd.notna(ranked) else ""
+
+    # 第1希望バッチ生成の Flat シミュレーション確率
+    flat_row = first_choice_df[first_choice_df["希望科"] == hope]
+    flat_str = ""
+    if not flat_row.empty:
+        pct = flat_row["通過確率"].iloc[0]
+        flat_str = f"{pct:.1f}%"
+
+    rows.append({
+        "希望":      f"{i}: {hope}",
+        "順位あり":  ranked_str,
+        "全て第1希望": flat_str
     })
-st.dataframe(pd.DataFrame(display), use_container_width=True)
+
+st.dataframe(
+    pd.DataFrame(rows).set_index("希望"),
+    use_container_width=True
+)
 
 # --- 希望人数表示 ---
 st.subheader("📋 第1～3希望人数 (科ごと・Term1～Term11)")
