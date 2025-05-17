@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import hashlib
+import altair as alt
 import re
 
 # Ensure current directory is in module path
@@ -36,33 +37,35 @@ def load_data():
     prob_df      = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id':str})
     auth_df      = pd.read_csv("auth.csv", dtype={'student_id':str,'password_hash':str,'role':str})
     rank_df      = pd.read_csv("popular_departments_rank_combined.csv")
-    terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id':str,'term_1':int,'term_2':int,'term_3':int,'term_4':int})
+    terms_df     = pd.read_csv(
+        "student_terms.csv",
+        dtype={'student_id':str,'term_1':int,'term_2':int,'term_3':int,'term_4':int}
+    )
     responses_df = pd.read_csv("responses.csv", dtype={'student_id':str})
     first_choice_df = pd.read_csv("first_choice_probabilities.csv", dtype={'student_id':str})
+
+    # student_id の前ゼロ除去
     for df in [responses_df, prob_df, terms_df, auth_df, first_choice_df]:
         df['student_id'] = df['student_id'].str.lstrip('0')
+
+    # インデックス設定
     responses_df.set_index('student_id', inplace=True)
     prob_df.set_index('student_id', inplace=True)
     terms_df.set_index('student_id', inplace=True)
     auth_df.set_index('student_id', inplace=True)
     first_choice_df.set_index('student_id', inplace=True)
+
     return prob_df, auth_df, rank_df, terms_df, responses_df, first_choice_df
 
 prob_df, auth_df, rank_df, terms_df, responses_df, first_choice_df = load_data()
 
 # --- 追加データロード ---
+# 初期配属結果
 assignment_df = pd.read_csv(
     "initial_assignment_result.csv",
     dtype={'student_id':str,'term':int,'assigned_department':str,'matched_priority':float}
 )
 assignment_df['student_id'] = assignment_df['student_id'].str.lstrip('0')
-
-# シミュレーション割当結果
-sim_assign_df = pd.read_csv(
-    "assignment_with_unanswered.csv",
-    dtype={'student_id':str,'term':int,'assigned_department':str,'hope_rank':float,'is_imputed':bool}
-)
-sim_assign_df['student_id'] = sim_assign_df['student_id'].str.lstrip('0')
 
 # 抽選順位
 lottery_df = pd.read_csv(
@@ -71,6 +74,20 @@ lottery_df = pd.read_csv(
 )
 lottery_df['student_id'] = lottery_df['student_id'].str.lstrip('0')
 lottery_df.set_index('student_id', inplace=True)
+
+# department_capacity
+capacity_df = pd.read_csv(
+    "department_capacity.csv",
+    dtype=str
+)
+# 数値型に変換 (term_ 列のみ)
+for col in capacity_df.columns:
+    if col.startswith('term_'):
+        # 数字部分を抽出し、欠損は0で埋めてから int 型に
+        extracted = capacity_df[col].str.extract(r"(\d+)")
+        capacity_df[col] = extracted.iloc[:, 0].fillna('0').astype(int)
+# hospital_department 列はそのまま文字列として扱う
+capacity_df['hospital_department'] = capacity_df['hospital_department'].astype(str)
 
 # --- 認証関数 ---
 def verify_user(sid, pwd):
@@ -107,31 +124,16 @@ st.markdown(f"🧾 **回答者：{answered_count}/{all_count} 人**（{ratio:.1f
 if ratio < 70:
     st.warning("⚠️ 回答者が少ないため結果が不安定です。回答を促してください。")
 
-# --- 機能1: 初期配属結果 & シミュ結果並列表示 ---
-st.subheader("🗒️ 初期配属結果 と シミュレーション結果比較")
-col1, col2 = st.columns(2)
-with col1:
-    st.markdown("**初期配属結果**")
-    my_assign = assignment_df[assignment_df['student_id'] == sid]
-    if not my_assign.empty:
-        st.dataframe(
-            my_assign.sort_values('term')
-                     .set_index('term')[['assigned_department','matched_priority']],
-            use_container_width=True
-        )
-    else:
-        st.info("初期配属結果が見つかりません。")
-with col2:
-    st.markdown("**シミュレーション割当結果**")
-    my_sim = sim_assign_df[sim_assign_df['student_id'] == sid]
-    if not my_sim.empty:
-        st.dataframe(
-            my_sim.sort_values('term')
-                  .set_index('term')[['assigned_department','hope_rank','is_imputed']],
-            use_container_width=True
-        )
-    else:
-        st.info("シミュレーション結果が見つかりません。")
+# --- 機能1: 初期配属結果 ---
+st.subheader("🗒️ 初期配属結果")
+my_assign = assignment_df[assignment_df['student_id'] == sid]
+if not my_assign.empty:
+    st.dataframe(
+        my_assign.sort_values('term').set_index('term')[['assigned_department','matched_priority']],
+        use_container_width=True
+    )
+else:
+    st.info("初期配属結果が見つかりません。")
 
 # --- 機能2: 第1希望通過確率 ---
 st.subheader("📈 第1希望通過確率")
@@ -144,10 +146,11 @@ if sid in first_choice_df.index:
 else:
     st.info("第1希望通過確率のデータがありません。")
 
-# --- 機能3: 第1～5希望人数表示 ---
+# --- 機能3: 第1～5希望人数表示（自分より抽選順位が高い学生のみ） ---
 st.subheader("📊 第1～5希望人数 (科ごと・Term1～Term11) - 自分より抽選順位が高い学生のみ")
 my_order = lottery_df.loc[sid, 'lottery_order']
 higher = lottery_df[lottery_df['lottery_order'] < my_order].index.tolist()
+
 counts = {}
 for uid in higher:
     if uid not in responses_df.index:
@@ -173,16 +176,10 @@ else:
 
 # --- 枠埋まり科（科単位集計）と最大抽選順位 ---
 st.subheader("🏥 枠埋まり科（科単位集計）と最大抽選順位")
+
 THRESHOLD_RATE = 1.0
-cap_long = (
-    capacity_df
-    .melt(id_vars=['hospital_department'], var_name='term_label', value_name='capacity')
-    .assign(
-        term=lambda df: df['term_label'].str.extract(r'_(\d+)').astype(int),
-        capacity=lambda df: df['capacity'].astype(int)
-    )
-    .drop(columns='term_label')
-)
+# capacity_df は上部で読み込み済み
+# valid 割当
 valid = assignment_df[assignment_df['assigned_department'] != '未配属']
 assigned_counts = (
     valid
@@ -191,12 +188,25 @@ assigned_counts = (
     .reset_index(name='assigned_count')
     .rename(columns={'assigned_department': 'hospital_department'})
 )
-merged = assigned_counts.merge(cap_long, on=['hospital_department', 'term'])
+merged = assigned_counts.merge(
+    capacity_df.melt(id_vars=['hospital_department'], var_name='term_label', value_name='capacity')
+    .assign(
+        term=lambda df: df['term_label'].str.extract(r'_(\d+)').astype(int),
+        capacity=lambda df: df['capacity'].astype(int)
+    )
+    .drop(columns='term_label'),
+    on=['hospital_department', 'term']
+)
 merged['fill_rate'] = merged['assigned_count'] / merged['capacity']
 full = merged[merged['fill_rate'] >= THRESHOLD_RATE]
+
 with_lottery = valid.merge(lottery_df.reset_index(), on='student_id')
+# 枠埋まり対象だけ抽出
 key_set = set(full[['hospital_department', 'term']].itertuples(index=False, name=None))
-filled = with_lottery[with_lottery.apply(lambda r: (r['assigned_department'], r['term']) in key_set, axis=1)]
+filled = with_lottery[
+    with_lottery.apply(lambda r: (r['assigned_department'], r['term']) in key_set, axis=1)
+]
+
 dept_summary = (
     filled
     .groupby('assigned_department')
@@ -210,7 +220,6 @@ dept_summary = (
     .head(15)
 )
 st.dataframe(dept_summary, use_container_width=True)
-
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
 st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位")
@@ -251,4 +260,3 @@ chart2 = (
     .properties(width=700, height=max(300, len(max_rank)*25))
 )
 st.altair_chart(chart2, use_container_width=True)
-
