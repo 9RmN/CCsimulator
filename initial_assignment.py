@@ -32,7 +32,6 @@ for _, row in responses.iterrows():
         raw = row.get(f"hope_{i}_terms")
         if pd.isna(dept) or pd.isna(raw):
             continue
-        # リスト形式の文字列をパース
         try:
             terms_list = ast.literal_eval(raw) if isinstance(raw, str) else raw
         except Exception:
@@ -55,11 +54,9 @@ student_assigned_departments = {}
 
 # 各 term_* 列ごとの処理
 for term_label in TERM_LABELS:
-    # term_map: student_id と実ターム番号
     term_map = terms_df[['student_id', term_label]].rename(columns={term_label: 'term'})
     term_map['term'] = term_map['term'].astype(int)
 
-    # マージ & 抽選順ソート
     merged = (
         responses
         .merge(term_map, on='student_id')
@@ -67,29 +64,27 @@ for term_label in TERM_LABELS:
         .sort_values('lottery_order')
     )
 
-    # 各学生の配属
     for _, row in merged.iterrows():
         sid = row['student_id']
         term = row['term']
         used_depts = student_assigned_departments.get(sid, set())
         assigned = False
 
-        # 希望順ループ
         for i in range(1, MAX_HOPES + 1):
             dept = row.get(f"hope_{i}")
             if pd.isna(dept) or dept in used_depts:
                 continue
 
-            # 許可ターム取得（指定ターム優先で、なければ全ターム）
-default_terms = student_terms.get(sid, [])
-dept_specific = term_prefs.get(sid, {}).get(dept, [])
-if dept_specific:
-    allowed = dept_specific + [t for t in default_terms if t not in dept_specific]
-else:
-    allowed = default_terms
-# 指定／デフォルトから得たタームの中で現在の term を試す
-if term not in allowed:
-    continue
+            # 許可ターム取得（指定ターム優先で、指定外も試行）
+            default_terms = student_terms.get(sid, [])
+            dept_specific = term_prefs.get(sid, {}).get(dept, [])
+            if dept_specific:
+                allowed = dept_specific + [t for t in default_terms if t not in dept_specific]
+            else:
+                allowed = default_terms
+
+            # 現在の term が許可リストにあるか確認
+            if term not in allowed:
                 continue
 
             # 割当処理
@@ -107,7 +102,6 @@ if term not in allowed:
                 assigned = True
                 break
 
-        # 未配属の場合
         if not assigned:
             assignment_result.append({
                 'student_id': sid,
