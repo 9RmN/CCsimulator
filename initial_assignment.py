@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+import ast
 
 # --- データ読み込み ---
 responses   = pd.read_csv("responses.csv", dtype=str)
@@ -17,20 +18,31 @@ hope_columns = [col for col in responses.columns if re.fullmatch(r"hope_\d+", co
 MAX_HOPES = max(int(col.split('_')[1]) for col in hope_columns)
 
 # --- 複数ターム希望の取り込み ---
-# responses.csv に生成された hope_n_terms リスト列を用いる
+# responses.csv に生成された hope_n_terms 列（文字列またはリスト）をパース
 term_prefs = {}
 for _, row in responses.iterrows():
     sid = row['student_id']
     prefs = []
     for i in range(1, MAX_HOPES+1):
         dept = row.get(f"hope_{i}")
-        terms_list = row.get(f"hope_{i}_terms")
-        if pd.notna(dept) and isinstance(terms_list, list):
-            for t in terms_list:
-                try:
-                    prefs.append((dept, int(t)))
-                except ValueError:
-                    continue
+        raw_terms = row.get(f"hope_{i}_terms")  # 例: "[9, 10]"
+        if pd.isna(dept) or pd.isna(raw_terms):
+            continue
+        # raw_terms が文字列ならリストに変換
+        if isinstance(raw_terms, str):
+            try:
+                terms_list = ast.literal_eval(raw_terms)
+            except Exception:
+                continue
+        elif isinstance(raw_terms, list):
+            terms_list = raw_terms
+        else:
+            continue
+        for t in terms_list:
+            try:
+                prefs.append((dept, int(t)))
+            except ValueError:
+                continue
     term_prefs[sid] = prefs
 
 # term 列ラベルのリスト
@@ -42,7 +54,7 @@ student_assigned = {}
 
 # term ごとにループ
 for term_label in TERM_LABELS:
-    # term_map: student_id と期番号 (int) を持つデータフレーム
+    # term_map: student_id と期番号 (int)
     term_map = terms_df[['student_id', term_label]].rename(columns={term_label:'term'})
     term_map['term'] = term_map['term'].astype(int)
 
@@ -64,7 +76,7 @@ for term_label in TERM_LABELS:
     # 学生ごと配属
     for _, row in merged.iterrows():
         sid = row['student_id']
-        term = row['term']  # int
+        term = row['term']
         allowed = term_prefs.get(sid, [])
         used = student_assigned.get(sid, set())
         placed = False
