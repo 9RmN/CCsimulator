@@ -147,13 +147,26 @@ with col1:
         st.info("初期配属結果が見つかりません。")
 with col2:
     st.markdown("**シミュレーション割当結果**")
-    my_sim = sim_assign_df[sim_assign_df['student_id'] == sid]
-    if not my_sim.empty:
-        st.dataframe(
-            my_sim.sort_values('term')
-                  .set_index('term')[['assigned_department','hope_rank','is_imputed']],
-            use_container_width=True
-        )
+        my_sim = sim_assign_df[sim_assign_df['student_id'] == sid]
+    # 未配属行を除外
+    my_sim = my_sim[my_sim['assigned_department'] != '未配属']
+    if my_sim.empty:
+        st.info("シミュレーション結果が見つかりません。")
+    else:
+        try:
+            df_sorted = my_sim.sort_values('term')
+        except KeyError:
+            st.error("シミュ結果に 'term' 列が見つかりません: " + ", ".join(my_sim.columns))
+        else:
+            st.dataframe(
+                df_sorted.set_index('term')[['assigned_department','hope_rank','is_imputed']],
+                use_container_width=True
+            )
+else:
+            st.dataframe(
+                df_sorted.set_index('term')[['assigned_department','hope_rank','is_imputed']],
+                use_container_width=True
+            )
     else:
         st.info("シミュレーション結果が見つかりません。")
 
@@ -169,6 +182,7 @@ else:
     st.info("第1希望通過確率のデータがありません。")
 
 # --- 以下省略：他の機能は変更なし ---
+
 
 
 # --- 機能3: 第1～5希望人数表示 ---
