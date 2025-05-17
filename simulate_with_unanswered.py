@@ -13,23 +13,25 @@ def run_simulation(responses_base: pd.DataFrame,
     with added randomness in assignment for students with the same lottery_order.
     """
     # --- Setup ---
-    hope_cols = [c for c in responses_base.columns if c.startswith('hope_') and not c.endswith('_term')]
+    # only hope_n columns (exclude hope_n_term and hope_n_terms)
+    hope_cols = [c for c in responses_base.columns if c.startswith('hope_') and not c.endswith('_term') and not c.endswith('_terms')]
     MAX_HOPES = max(int(c.split('_')[1]) for c in hope_cols)
     term_labels = [c for c in terms_df.columns if c.startswith('term_')]
 
-    # --- Build term preferences from hope_i_term columns ---
+    # --- Build term preferences from hope_i_terms columns ---
     term_prefs = {}
     for _, row in responses_base.iterrows():
         sid = row['student_id']
         prefs = []
         for i in range(1, MAX_HOPES+1):
             dept = row.get(f'hope_{i}')
-            term_val = row.get(f'hope_{i}_term')
-            if pd.notna(dept) and pd.notna(term_val):
-                try:
-                    prefs.append((dept, int(term_val)))
-                except:
-                    pass
+            terms_list = row.get(f'hope_{i}_terms')
+            if pd.notna(dept) and isinstance(terms_list, list):
+                for t in terms_list:
+                    try:
+                        prefs.append((dept, int(t)))
+                    except ValueError:
+                        continue
         term_prefs[sid] = prefs
 
     # --- Popularity scores for imputation ---
@@ -106,7 +108,7 @@ def run_simulation(responses_base: pd.DataFrame,
                 dept = row.get(f'hope_{i}', '')
                 if not dept or dept in used:
                     continue
-                # Respect term preference if specified
+                # Respect term preferences if specified
                 if allowed and (dept, term) not in allowed:
                     continue
                 key = (dept, f'term_{term}')
@@ -119,7 +121,7 @@ def run_simulation(responses_base: pd.DataFrame,
                         'term': term,
                         'assigned_department': dept,
                         'hope_rank': i,
-                        'is_imputed': bool(row['is_imputed'])
+                        'is_imputed': bool(row.get('is_imputed', False))
                     })
                     placed = True
                     break
@@ -130,7 +132,7 @@ def run_simulation(responses_base: pd.DataFrame,
                     'term': term,
                     'assigned_department': '未配属',
                     'hope_rank': None,
-                    'is_imputed': bool(row['is_imputed'])
+                    'is_imputed': bool(row.get('is_imputed', False))
                 })
 
     return pd.DataFrame(assignment)
