@@ -156,20 +156,45 @@ try:
 except FileNotFoundError:
     st.warning("department_summary.csv が見つかりません。")
 
-# --- 人気診療科トップ15 ---
-st.subheader("🔥 人気診療科トップ15 (抽選順位中央値)")
-median_col = rank_df.columns[1]
-rank_df[median_col] = pd.to_numeric(rank_df[median_col], errors='coerce')
-top15 = rank_df.groupby(rank_df.columns[0])[median_col].median().nsmallest(15)
-chart_df = top15.reset_index().rename(columns={rank_df.columns[0]: '診療科', median_col: '抽選順位中央値'})
-# ベースチャートと数値ラベル
+# --- 人気診療科トップ15 (ターム別 抽選順位推定ライン) ---
+st.subheader("🔥 人気診療科トップ15 (ターム別 抽選順位推定ライン)")
+
+# ターム別 CSV を読み込む
+term_rank = pd.read_csv("popular_departments_rank_by_term.csv", dtype={'term': int})
+
+# 表示するタームを選択
+terms = sorted(term_rank['term'].unique())
+selected_term = st.selectbox("表示したいタームを選択", terms, index=0)
+
+# 選択タームの上位15科を抽出し、昇順にソート
+df_term = term_rank[term_rank['term'] == selected_term]
+chart_df = (
+    df_term
+    .nlargest(15, '抽選順位推定ライン')
+    .sort_values('抽選順位推定ライン', ascending=True)
+    .rename(columns={'assigned_department': '診療科'})
+)
+
+# バーチャートとラベル
 base_chart = alt.Chart(chart_df).mark_bar().encode(
-    x=alt.X('抽選順位中央値:Q', title='抽選順位中央値'),
-    y=alt.Y('診療科:N', sort=alt.EncodingSortField(field='抽選順位中央値', order='ascending'), title=None)
-).properties(width=700, height=max(300, len(chart_df)*25))
-text = base_chart.mark_text(align='left', baseline='middle', dx=3).encode(text=alt.Text('抽選順位中央値:Q'))
-layered = alt.layer(base_chart, text).configure_axis(labelFontSize=10, titleFontSize=14, labelAngle=0, labelAlign='right')
-st.altair_chart(layered, use_container_width=True)
+    x=alt.X('抽選順位推定ライン:Q', title='抽選順位推定ライン'),
+    y=alt.Y('診療科:N',
+            sort=alt.EncodingSortField(field='抽選順位推定ライン', order='ascending'),
+            title=None)
+).properties(
+    width=700,
+    height=max(300, len(chart_df) * 30)
+)
+
+text = base_chart.mark_text(
+    align='left', baseline='middle', dx=3
+).encode(
+    text=alt.Text('抽選順位推定ライン:Q', format='.0f')
+)
+
+# 合成して表示
+st.altair_chart(base_chart + text, use_container_width=True)
+
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
 st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位")
