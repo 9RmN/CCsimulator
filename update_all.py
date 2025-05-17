@@ -42,8 +42,17 @@ values = result.get("values", [])
 if not values:
     print("❌ データが取得できませんでした")
     exit(1)
-
-df = pd.DataFrame(values[1:], columns=values[0])
+# ヘッダー列数に合わせて各行をパディング or 切り詰め
+header = values[0]
+rows = values[1:]
+ncol = len(header)
+aligned = []
+for row in rows:
+    if len(row) < ncol:
+        aligned.append(row + [""] * (ncol - len(row)))
+    else:
+        aligned.append(row[:ncol])
+df = pd.DataFrame(aligned, columns=header)
 df.to_csv("form_responses_final.csv", index=False)
 print("✅ form_responses_final.csv を保存しました")
 
@@ -100,7 +109,6 @@ except Exception as e:
     print("❌ responses.csv への変換に失敗:", e)
     exit(1)
 
-
 # --- Step 3: auth.csv 生成（PEPPER 必要） ---
 if PEPPER:
     print("🔐 auth.csv を生成中…")
@@ -135,7 +143,6 @@ scripts = [
 for script in scripts:
     if script == "generate_probability.py":
         print(f"⚙️ {script} をデフォルト呼び出し（20 iterations）で実行中…")
-        # --iterations を指定せず、スクリプト内のデフォルト 20 を使う
         subprocess.run(["python", script], check=True)
     elif script == "simulate_with_unanswered.py":
         print(f"⚙️ {script} をサイレント実行中…")
