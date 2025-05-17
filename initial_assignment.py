@@ -8,9 +8,8 @@ capacity_df = pd.read_csv("department_capacity.csv")
 terms_df    = pd.read_csv("student_terms.csv", dtype=str)
 
 # student_id の正規化
-responses['student_id'] = responses['student_id'].str.lstrip('0')
-lottery['student_id']   = lottery['student_id'].str.lstrip('0')
-terms_df['student_id']  = terms_df['student_id'].str.lstrip('0')
+for df in (responses, lottery, terms_df):
+    df['student_id'] = df['student_id'].str.lstrip('0')
 
 # --- 希望列の特定 ---
 hope_columns = [col for col in responses.columns if col.startswith("hope_")]
@@ -26,17 +25,15 @@ student_terms = {
 }
 
 # --- 科ごとの指定タームマップ作成 ---
-# responses 側に hope_{i}_terms 列が追加されている前提
 term_prefs = {}
 for _, row in responses.iterrows():
     sid = row['student_id']
     prefs = {}
     for i in range(1, MAX_HOPES+1):
         dept = row.get(f"hope_{i}")
-        raw = row.get(f"hope_{i}_terms")
+        raw  = row.get(f"hope_{i}_terms")
         if pd.isna(dept) or pd.isna(raw):
             continue
-        # リスト形式の文字列をパース
         try:
             terms_list = ast.literal_eval(raw) if isinstance(raw, str) else raw
         except Exception:
@@ -44,13 +41,22 @@ for _, row in responses.iterrows():
         prefs[dept] = [int(t) for t in terms_list if str(t).isdigit()]
     term_prefs[sid] = prefs
 
+# --- capacity の辞書化（全 term_* 列を対象） ---
+cap = {}
+cap_cols = [c for c in capacity_df.columns if c.startswith('term_')]
+for _, row in capacity_df.iterrows():
+    dept = row['hospital_department']
+    for col in cap_cols:
+        term_num = int(col.split('_')[1])
+        cap[(dept, term_num)] = int(row[col]) if not pd.isna(row[col]) else 0
+
 # --- 初期配属記録 ---
 assignment_result = []
 student_assigned_departments = {}
 
-# 各 term ごとに配属処理
+# 各 term_* 列ごとの配属処理
 for term_label in TERM_LABELS:
-    # term_map を student_id と term（数値）で取得
+    # term_map を student_id と実ターム番号で取得
     term_map = (
         terms_df[['student_id', term_label]]
         .rename(columns={term_label: 'term'})
@@ -65,47 +71,36 @@ for term_label in TERM_LABELS:
         .sort_values('lottery_order')
     )
 
-    # capacity キー辞書作成
-    cap_dict = {}
-    for _, row in capacity_df.iterrows():
-        dept = row['hospital_department']
-        for tl in TERM_LABELS:
-            cap_dict[(dept, int(tl.split('_')[1]))] = (
-                int(row[tl]) if not pd.isna(row[tl]) else 0
-            )
-
     # 各学生の配属
     for _, row in merged.iterrows():
         sid = row['student_id']
         term = row['term']
-        assigned_depts = student_assigned_departments.get(sid, set())
+        used_depts = student_assigned_departments.get(sid, set())
         assigned = False
 
-        # 今回の学生が利用できるタームリスト
-        # ただし、各希望科ごとに dept-specific prefs を優先
+        # 希望順ループ
         for i in range(1, MAX_HOPES + 1):
             dept = row.get(f"hope_{i}")
-            if pd.isna(dept) or dept in assigned_depts:
+            if pd.isna(dept) or dept in used_depts:
                 continue
 
-            # 課せられたターム条件を取得
-            allowed = term_prefs.get(sid, {}).get(dept,
-                        student_terms.get(sid, []))
-            # もしこの term が許可リストにないならスキップ
+            # 許可タームリスト: 指定があればそれ、なしなら student_terms
+            allowed = term_prefs.get(sid, {}).get(dept, student_terms.get(sid, []))
             if term not in allowed:
                 continue
 
+            # capキーは (dept, term)
             cap_key = (dept, term)
-            if cap_dict.get(cap_key, 0) > 0:
-                cap_dict[cap_key] -= 1
+            if cap.get(cap_key, 0) > 0:
+                cap[cap_key] -= 1
                 assignment_result.append({
                     'student_id': sid,
                     'term': term,
                     'assigned_department': dept,
                     'hope_rank': i
                 })
-                assigned_depts.add(dept)
-                student_assigned_departments[sid] = assigned_depts
+                used_depts.add(dept)
+                student_assigned_departments[sid] = used_depts
                 assigned = True
                 break
 
@@ -122,4 +117,4 @@ for term_label in TERM_LABELS:
 pd.DataFrame(assignment_result).to_csv(
     'initial_assignment_result.csv', index=False
 )
-print("✅ 初期配属（1人1科1term制約付き with term preferences）完了")
+print("✅ 初期配属（1人1科1term制約付き with full term range）完了")
