@@ -85,9 +85,16 @@ for term_label in TERM_LABELS:
                 continue
 
             # 許可タームリスト: 指定があればそれ、なしなら student_terms
-            allowed = term_prefs.get(sid, {}).get(dept, student_terms.get(sid, []))
-            if term not in allowed:
-                continue
+default = student_terms_map[sid]    # 例えば [2,5,10,11]
+dept_specific = term_prefs[sid].get(dept, [])
+# dept_specific が空なら default をそのまま、
+# そうでなければ dept_specific + (default―dept_specific)
+if dept_specific:
+    # 指定タームも、その他 slot も試せるように
+    allowed = dept_specific + [t for t in default if t not in dept_specific]
+else:
+    allowed = default
+
 
             # capキーは (dept, term)
             cap_key = (dept, term)
