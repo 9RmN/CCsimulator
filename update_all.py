@@ -85,15 +85,15 @@ try:
             combined = pd.NA
         output[f"hope_{i}"] = combined
 
-        # グリッド回答からターム番号を取り出し
+        # グリッド回答から複数ターム番号を取り出し（リストとして保存）
         grid_col = term_columns.get(i)
         if grid_col:
-            raw = df2[grid_col].fillna("")            # 例: "3ターム"
-            # 数字部分だけ抽出して Int 型に
-            term_num = raw.str.extract(r"^(\d+)")[0].astype("Int64")
-            output[f"hope_{i}_term"] = term_num
+            raw = df2[grid_col].fillna("")  # 例: "3ターム, 5ターム"
+            term_list = raw.str.findall(r"(\d+)") \
+                           .apply(lambda lst: [int(x) for x in lst] if lst else pd.NA)
+            output[f"hope_{i}_terms"] = term_list
         else:
-            output[f"hope_{i}_term"] = pd.NA
+            output[f"hope_{i}_terms"] = pd.NA
 
     # DataFrame 化＋重複削除
     responses = pd.DataFrame(output)
