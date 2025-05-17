@@ -75,15 +75,50 @@ for term_label in TERM_LABELS:
             if pd.isna(dept) or dept in used_depts:
                 continue
 
-            # 許可ターム取得（指定ターム優先で、指定外も試行）
-            default_terms = student_terms.get(sid, [])
-            dept_specific = term_prefs.get(sid, {}).get(dept, [])
-            if dept_specific:
-                allowed = dept_specific + [t for t in default_terms if t not in dept_specific]
-            else:
-                allowed = default_terms
+            # 許可ターム取得（指定タームを最優先）
+default_terms = student_terms.get(sid, [])
+dept_specific = term_prefs.get(sid, {}).get(dept, [])
 
-            # 現在の term が許可リストにあるか確認
+# まず指定タームのみ試す
+if dept_specific:
+    for t in dept_specific:
+        if t == term:
+            cap_key = (dept, term)
+            if cap.get(cap_key, 0) > 0:
+                cap[cap_key] -= 1
+                assignment_result.append({
+                    'student_id': sid,
+                    'term': term,
+                    'assigned_department': dept,
+                    'hope_rank': i
+                })
+                used_depts.add(dept)
+                student_assigned_departments[sid] = used_depts
+                assigned = True
+            break
+    # 指定タームを試した後はデフォルトは試さない
+    if assigned:
+        break
+    else:
+        continue
+
+# dept_specific がない場合のみデフォルトタームを試す
+for t in default_terms:
+    if t != term:
+        continue
+    cap_key = (dept, term)
+    if cap.get(cap_key, 0) > 0:
+        cap[cap_key] -= 1
+        assignment_result.append({
+            'student_id': sid,
+            'term': term,
+            'assigned_department': dept,
+            'hope_rank': i
+        })
+        used_depts.add(dept)
+        student_assigned_departments[sid] = used_depts
+        assigned = True
+    break
             if term not in allowed:
                 continue
 
