@@ -1,13 +1,17 @@
-import pandas as pd
-import re
+import re, pandas as pd
 
-# --- ターム指定パース関数 ---
 def parse_term_list(raw, default_terms):
+    """
+    raw: e.g. "[9, 10]" や "2;5", "", NaN
+    default_terms: [2,5,9,10] のような基本４ターム
+    戻り値: 指定タームのリスト（昇順）、指定なし or 不正入力時は None
+    """
     if pd.isna(raw) or not str(raw).strip():
         return None
-    tokens = re.split(r"[;, \t]+", str(raw).strip())
-    nums   = [int(t) for t in tokens if t.isdigit()]
-    valid  = [n for n in nums if n in default_terms]
+    # 数字をすべて抽出
+    nums = [int(n) for n in re.findall(r"\d+", str(raw))]
+    # default_terms のサブセットだけ残す
+    valid = [n for n in nums if n in default_terms]
     return sorted(set(valid)) if valid else None
 
 # --- CSV 読み込み ---
