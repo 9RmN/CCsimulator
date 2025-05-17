@@ -37,28 +37,54 @@ def load_data():
     prob_df      = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id':str})
     auth_df      = pd.read_csv("auth.csv", dtype={'student_id':str,'password_hash':str,'role':str})
     rank_df      = pd.read_csv("popular_departments_rank_combined.csv")
-    terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id':str,'term_1':int,'term_2':int,'term_3':int,'term_4':int})
+    terms_df     = pd.read_csv(
+        "student_terms.csv",
+        dtype={'student_id':str,'term_1':int,'term_2':int,'term_3':int,'term_4':int}
+    )
     responses_df = pd.read_csv("responses.csv", dtype={'student_id':str})
     first_choice_df = pd.read_csv("first_choice_probabilities.csv", dtype={'student_id':str})
-    for df in [responses_df, prob_df, terms_df, auth_df]:
+
+    # student_id の前ゼロ除去
+    for df in [responses_df, prob_df, terms_df, auth_df, first_choice_df]:
         df['student_id'] = df['student_id'].str.lstrip('0')
+
+    # インデックス設定
     responses_df.set_index('student_id', inplace=True)
     prob_df.set_index('student_id', inplace=True)
     terms_df.set_index('student_id', inplace=True)
     auth_df.set_index('student_id', inplace=True)
-    first_choice_df['student_id'] = first_choice_df['student_id'].str.lstrip('0')
     first_choice_df.set_index('student_id', inplace=True)
+
     return prob_df, auth_df, rank_df, terms_df, responses_df, first_choice_df
 
 prob_df, auth_df, rank_df, terms_df, responses_df, first_choice_df = load_data()
 
 # --- 追加データロード ---
-assignment_df = pd.read_csv("initial_assignment_result.csv", dtype={'student_id':str,'term':int,'assigned_department':str,'matched_priority':float})
+# 初期配属結果
+assignment_df = pd.read_csv(
+    "initial_assignment_result.csv",
+    dtype={'student_id':str,'term':int,'assigned_department':str,'matched_priority':float}
+)
 assignment_df['student_id'] = assignment_df['student_id'].str.lstrip('0')
 
-lottery_df = pd.read_csv("lottery_order.csv", dtype={'student_id':str,'lottery_order':int})
+# 抽選順位
+lottery_df = pd.read_csv(
+    "lottery_order.csv",
+    dtype={'student_id':str,'lottery_order':int}
+)
 lottery_df['student_id'] = lottery_df['student_id'].str.lstrip('0')
 lottery_df.set_index('student_id', inplace=True)
+
+# department_capacity
+capacity_df = pd.read_csv(
+    "department_capacity.csv",
+    dtype=str
+)
+# 数値型に変換
+for col in capacity_df.columns:
+    if col.startswith('term_'):
+        capacity_df[col] = capacity_df[col].str.extract(r"(\d+)").astype(int)
+capacity_df['hospital_department'] = capacity_df['hospital_department'].astype(str)
 
 # --- 認証関数 ---
 def verify_user(sid, pwd):
@@ -137,7 +163,6 @@ for uid in higher:
         use_terms = term_list if term_list else default_terms
         for t in use_terms:
             counts[(dept, t)] = counts.get((dept, t), 0) + 1
-
 rows = [{'診療科': dept, 'Term': term, '人数': cnt} for (dept, term), cnt in counts.items()]
 cnt_df = pd.DataFrame(rows)
 if cnt_df.empty:
@@ -149,67 +174,50 @@ else:
 # --- 枠埋まり科（科単位集計）と最大抽選順位 ---
 st.subheader("🏥 枠埋まり科（科単位集計）と最大抽選順位")
 
-# 閾値：100%埋まったものだけ
 THRESHOLD_RATE = 1.0
-
-# 1) capacity_df を縦長化
-cap_long = (
-    capacity_df
-    .melt(id_vars=["hospital_department"], var_name="term_label", value_name="capacity")
-    .assign(
-        term=lambda d: d["term_label"].str.extract(r"_(\d+)").astype(int),
-        capacity=lambda d: d["capacity"].astype(int)
-    )
-    .drop(columns="term_label")
-)
-
-# 2) initial_assignment_result.csv から valid 割当を取得
-valid = assignment_df[assignment_df["assigned_department"] != "未配属"]
+# capacity_df は上部で読み込み済み
+# valid 割当
+valid = assignment_df[assignment_df['assigned_department'] != '未配属']
 assigned_counts = (
     valid
-    .groupby(["assigned_department", "term"])
+    .groupby(['assigned_department', 'term'])
     .size()
-    .reset_index(name="assigned_count")
-    .rename(columns={"assigned_department": "hospital_department"})
+    .reset_index(name='assigned_count')
+    .rename(columns={'assigned_department': 'hospital_department'})
 )
-
-# 3) fill_rate 計算＆枠埋まりフィルタ
-merged = assigned_counts.merge(cap_long, on=["hospital_department", "term"])
-merged["fill_rate"] = merged["assigned_count"] / merged["capacity"]
-full = merged[merged["fill_rate"] >= THRESHOLD_RATE]
-
-# 4) lottery_order をマージして、枠埋まり項目だけ抽出
-with_lottery = (
-    valid
-    .merge(lottery_df, on="student_id")
-    .rename(columns={"assigned_department": "hospital_department"})
+merged = assigned_counts.merge(
+    capacity_df.melt(id_vars=['hospital_department'], var_name='term_label', value_name='capacity')
+    .assign(
+        term=lambda df: df['term_label'].str.extract(r'_(\d+)').astype(int),
+        capacity=lambda df: df['capacity'].astype(int)
+    )
+    .drop(columns='term_label'),
+    on=['hospital_department', 'term']
 )
-# dept×term の組み合わせでフィルタ
-key_tuples = set(full[["hospital_department","term"]].itertuples(index=False, name=None))
+merged['fill_rate'] = merged['assigned_count'] / merged['capacity']
+full = merged[merged['fill_rate'] >= THRESHOLD_RATE]
+
+with_lottery = valid.merge(lottery_df.reset_index(), on='student_id')
+# 枠埋まり対象だけ抽出
+key_set = set(full[['hospital_department', 'term']].itertuples(index=False, name=None))
 filled = with_lottery[
-    with_lottery.apply(lambda r: (r["assigned_department"], r["term"]) in key_tuples, axis=1)
+    with_lottery.apply(lambda r: (r['assigned_department'], r['term']) in key_set, axis=1)
 ]
 
-# 5) 科ごとに「合計配属人数」と「最大抽選順位」を集計
 dept_summary = (
     filled
-    .groupby("hospital_department")
+    .groupby('assigned_department')
     .agg(
-        total_assigned=("student_id","nunique"),
-        max_lottery_order=("lottery_order","max")
+        配属人数合計=('student_id', 'nunique'),
+        最大抽選順位=('lottery_order', 'max')
     )
     .reset_index()
-    .sort_values("total_assigned", ascending=False)
+    .rename(columns={'assigned_department': '科名'})
+    .sort_values('配属人数合計', ascending=False)
     .head(15)
 )
-
-# 6) 表示
-dept_summary = dept_summary.rename(columns={
-    "hospital_department": "科名",
-    "total_assigned":      "配属人数合計",
-    "max_lottery_order":   "最大抽選順位"
-})
 st.dataframe(dept_summary, use_container_width=True)
+
 
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
