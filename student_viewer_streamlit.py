@@ -220,3 +220,43 @@ dept_summary = (
     .head(15)
 )
 st.dataframe(dept_summary, use_container_width=True)
+
+# --- 昨年：一定割合以上配属された科の最大通過順位 ---
+st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位")
+# データ読み込み
+hist_df = pd.read_csv("2024配属結果.csv", dtype={'student_id':str, 'lottery_order':int})
+cap_df  = pd.read_csv("department_capacity2024.csv")
+# 長い形式に変換
+records = []
+term_cols = [c for c in hist_df.columns if c.startswith('term_')]
+for _, r in hist_df.iterrows():
+    rank = r['lottery_order']
+    for term in term_cols:
+        dept = r[term]
+        if pd.notna(dept) and dept not in ('','-'):
+            records.append({'department':dept,'lottery_order':rank})
+df_long2 = pd.DataFrame(records)
+# 部門ごと配属数
+assign_dept = df_long2.groupby('department',as_index=False).size().rename(columns={'size':'assigned_count'})
+# capacity合計
+cap_dept = (cap_df.melt(id_vars=['hospital_department'], value_vars=[c for c in cap_df.columns if c.startswith('term_')], var_name='term', value_name='capacity')
+                .groupby('hospital_department',as_index=False).agg({'capacity':'sum'}).rename(columns={'hospital_department':'department'}))
+# 配属率閾値
+threshold = st.slider('配属枠の何%以上が埋まった科を表示するか', min_value=0.0, max_value=1.0, value=0.7, step=0.05)
+# 合致科抽出
+depts_full = assign_dept.merge(cap_dept,on='department')
+reached = depts_full[depts_full['assigned_count'] >= depts_full['capacity']*threshold]['department']
+# 最大通過順位計算
+max_rank = (df_long2[df_long2['department'].isin(reached)].groupby('department',as_index=False)['lottery_order'].max()
+            .rename(columns={'lottery_order':'昨年の最大通過順位'}).sort_values('昨年の最大通過順位'))
+# バーグラフ（人気な科を上に表示）
+chart2 = (
+    alt.Chart(max_rank)
+    .mark_bar()
+    .encode(
+        x=alt.X('昨年の最大通過順位:Q', title='最大通過順位'),
+        y=alt.Y('department:N', sort=alt.EncodingSortField(field='昨年の最大通過順位', order='ascending'), title='診療科')
+    )
+    .properties(width=700, height=max(300, len(max_rank)*25))
+)
+st.altair_chart(chart2, use_container_width=True)
