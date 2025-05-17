@@ -33,12 +33,12 @@ except:
 # --- データロード ---
 @st.cache_data(ttl=60)
 def load_data():
-    prob_df      = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id':str})
-    auth_df      = pd.read_csv("auth.csv", dtype={'student_id':str,'password_hash':str,'role':str})
-    rank_df      = pd.read_csv("popular_departments_rank_combined.csv")
-    terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id':str,'term_1':int,'term_2':int,'term_3':int,'term_4':int})
-    responses_df = pd.read_csv("responses.csv", dtype={'student_id':str})
-    first_choice_df = pd.read_csv("first_choice_probabilities.csv", dtype={'student_id':str})
+    prob_df        = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id':str})
+    auth_df        = pd.read_csv("auth.csv", dtype={'student_id':str,'password_hash':str,'role':str})
+    rank_df        = pd.read_csv("popular_departments_rank_combined.csv")
+    terms_df       = pd.read_csv("student_terms.csv",    dtype={'student_id':str,'term_1':int,'term_2':int,'term_3':int,'term_4':int})
+    responses_df   = pd.read_csv("responses.csv",         dtype={'student_id':str})
+    first_choice_df= pd.read_csv("first_choice_probabilities.csv", dtype={'student_id':str})
     for df in [responses_df, prob_df, terms_df, auth_df, first_choice_df]:
         df['student_id'] = df['student_id'].str.lstrip('0')
     responses_df.set_index('student_id', inplace=True)
@@ -59,12 +59,24 @@ assignment_df['student_id'] = assignment_df['student_id'].str.lstrip('0')
 
 sim_assign_df = pd.read_csv(
     "assignment_with_unanswered.csv",
-    dtype={'student_id':str,'Term':int,'assigned_department':str,'hope_rank':float,'is_imputed':bool}
+    dtype=str
 )
+# セル全体で小文字化してカラム normalize
+sim_assign_df.columns = sim_assign_df.columns.str.lower()
+# student_id
 sim_assign_df['student_id'] = sim_assign_df['student_id'].str.lstrip('0')
-# unify term column naming
-if 'Term' in sim_assign_df.columns and 'term' not in sim_assign_df.columns:
-    sim_assign_df.rename(columns={'Term':'term'}, inplace=True)
+# term 列を検出・リネーム
+if 'term' not in sim_assign_df.columns:
+    for c in sim_assign_df.columns:
+        if 'term' in c:
+            sim_assign_df.rename(columns={c:'term'}, inplace=True)
+            break
+sim_assign_df['term'] = pd.to_numeric(sim_assign_df['term'], errors='coerce').fillna(0).astype(int)
+# hope_rank, is_imputed
+if 'hope_rank' in sim_assign_df.columns:
+    sim_assign_df['hope_rank'] = pd.to_numeric(sim_assign_df['hope_rank'], errors='coerce')
+if 'is_imputed' in sim_assign_df.columns:
+    sim_assign_df['is_imputed'] = sim_assign_df['is_imputed'].astype(bool)
 
 lottery_df = pd.read_csv(
     "lottery_order.csv",
@@ -81,7 +93,7 @@ capacity_df = pd.read_csv(
 for col in capacity_df.columns:
     if col.startswith('term_'):
         extracted = capacity_df[col].str.extract(r"(\\d+)")
-        capacity_df[col] = extracted.iloc[:, 0].fillna('0').astype(int)
+        capacity_df[col] = extracted.iloc[:,0].fillna('0').astype(int)
 capacity_df['hospital_department'] = capacity_df['hospital_department'].astype(str)
 
 # --- 認証関数 ---
@@ -155,6 +167,9 @@ if sid in first_choice_df.index:
     )
 else:
     st.info("第1希望通過確率のデータがありません。")
+
+# --- 以下省略：他の機能は変更なし ---
+
 
 # --- 機能3: 第1～5希望人数表示 ---
 st.subheader("📊 第1～5希望人数 (科ごと・Term1～Term11) - 自分より抽選順位が高い学生のみ")
