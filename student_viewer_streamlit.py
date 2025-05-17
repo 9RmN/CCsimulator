@@ -174,52 +174,74 @@ else:
     pivot = cnt_df.pivot(index='診療科', columns='Term', values='人数').fillna(0).astype(int)
     st.dataframe(pivot, use_container_width=True)
 
-# --- 枠埋まり科（科単位集計）と最大抽選順位 ---
-st.subheader("🏥 枠埋まり科（科単位集計）と最大抽選順位")
+# --- 枠埋まり科（科単位集計）とその科に配属される最大抽選順位 ---
+st.subheader("🏥 枠埋まり科（科単位集計）とその科に配属される最大抽選順位")
 
-THRESHOLD_RATE = 1.0
-# capacity_df は上部で読み込み済み
-# valid 割当
-valid = assignment_df[assignment_df['assigned_department'] != '未配属']
+# 枠埋まり閾値をスライダーで調整可能に
+THRESHOLD_RATE = st.slider("枠埋まり閾値 (%)", min_value=50, max_value=100, value=100, step=5) / 100
+
+# capacity_df を縦長に整形
+cap_long = (
+    capacity_df
+    .melt(id_vars=["hospital_department"], var_name="term_label", value_name="capacity")
+    .assign(
+        term=lambda d: d["term_label"].str.extract(r"_(\d+)").astype(int),
+        capacity=lambda d: d["capacity"].astype(int)
+    )
+    .drop(columns="term_label")
+)
+
+# initial_assignment_result.csv から「未配属」を除く割当取得
+valid = assignment_df[assignment_df["assigned_department"] != "未配属"]
 assigned_counts = (
     valid
-    .groupby(['assigned_department', 'term'])
+    .groupby(["assigned_department", "term"])
     .size()
-    .reset_index(name='assigned_count')
-    .rename(columns={'assigned_department': 'hospital_department'})
+    .reset_index(name="assigned_count")
+    .rename(columns={"assigned_department": "hospital_department"})
 )
-merged = assigned_counts.merge(
-    capacity_df.melt(id_vars=['hospital_department'], var_name='term_label', value_name='capacity')
-    .assign(
-        term=lambda df: df['term_label'].str.extract(r'_(\d+)').astype(int),
-        capacity=lambda df: df['capacity'].astype(int)
-    )
-    .drop(columns='term_label'),
-    on=['hospital_department', 'term']
-)
-merged['fill_rate'] = merged['assigned_count'] / merged['capacity']
-full = merged[merged['fill_rate'] >= THRESHOLD_RATE]
 
-with_lottery = valid.merge(lottery_df.reset_index(), on='student_id')
-# 枠埋まり対象だけ抽出
-key_set = set(full[['hospital_department', 'term']].itertuples(index=False, name=None))
-filled = with_lottery[
-    with_lottery.apply(lambda r: (r['assigned_department'], r['term']) in key_set, axis=1)
-]
+# fill_rate 計算＆閾値で枠埋まりフィルタ
+merged = assigned_counts.merge(cap_long, on=["hospital_department", "term"])
+merged["fill_rate"] = merged["assigned_count"] / merged["capacity"]
+full = merged[merged["fill_rate"] >= THRESHOLD_RATE]
 
+# 枠埋まりした科を取得（term問わず）
+filled_departments = full["hospital_department"].unique()
+
+# lottery_order をマージし、枠埋まりした科に配属された学生を抽出
+filled_students = valid[valid["assigned_department"].isin(filled_departments)]
+filled_students = filled_students.merge(lottery_df, on="student_id")
+
+# 科ごとに配属人数合計・受入人数合計・最大抽選順位を計算
 dept_summary = (
-    filled
-    .groupby('assigned_department')
+    filled_students
+    .groupby("assigned_department")
     .agg(
-        配属人数合計=('student_id', 'nunique'),
-        最大抽選順位=('lottery_order', 'max')
+        配属人数合計=("student_id", "nunique"),
+        最大抽選順位=("lottery_order", "max")
     )
     .reset_index()
-    .rename(columns={'assigned_department': '科名'})
-    .sort_values('配属人数合計', ascending=False)
-    .head(15)
+    .rename(columns={"assigned_department": "科名"})
 )
-st.dataframe(dept_summary, use_container_width=True)
+
+# 科ごとの受入人数合計を追加計算
+capacity_summary = (
+    cap_long[cap_long["hospital_department"].isin(filled_departments)]
+    .groupby("hospital_department")
+    .agg(受入人数合計=("capacity", "sum"))
+    .reset_index()
+    .rename(columns={"hospital_department": "科名"})
+)
+
+# 結果をマージして表示
+dept_summary = dept_summary.merge(capacity_summary, on="科名", how="left")
+
+# 見やすいように並び替え (配属人数の降順)
+dept_summary = dept_summary.sort_values("配属人数合計", ascending=False).head(15)
+
+st.dataframe(dept_summary[["科名", "配属人数合計", "受入人数合計", "最大抽選順位"]], use_container_width=True)
+
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
 st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位")
