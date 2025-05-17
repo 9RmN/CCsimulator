@@ -5,7 +5,8 @@ import pandas as pd
 import numpy as np
 import hashlib
 import altair as alt
-import importlib
+import re
+
 # Ensure current directory is in module path
 sys.path.insert(0, os.getcwd())
 
@@ -13,7 +14,7 @@ sys.path.insert(0, os.getcwd())
 st.markdown('<meta http-equiv="refresh" content="900">', unsafe_allow_html=True)
 
 # --- セッションステート初期化 ---
-for key in ['authenticated','user_id','flat_df']:
+for key in ['authenticated','user_id']:
     if key not in st.session_state:
         st.session_state[key] = None
 if st.session_state['authenticated'] is None:
@@ -36,22 +37,28 @@ def load_data():
     prob_df      = pd.read_csv("probability_montecarlo_combined.csv", dtype={'student_id':str})
     auth_df      = pd.read_csv("auth.csv", dtype={'student_id':str,'password_hash':str,'role':str})
     rank_df      = pd.read_csv("popular_departments_rank_combined.csv")
-    terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id':str})
+    terms_df     = pd.read_csv("student_terms.csv", dtype={'student_id':str,'term_1':int,'term_2':int,'term_3':int,'term_4':int})
     responses_df = pd.read_csv("responses.csv", dtype={'student_id':str})
     first_choice_df = pd.read_csv("first_choice_probabilities.csv", dtype={'student_id':str})
-    # 左ゼロ除去
-    for df in [responses_df,prob_df,terms_df,auth_df]:
+    for df in [responses_df, prob_df, terms_df, auth_df]:
         df['student_id'] = df['student_id'].str.lstrip('0')
-    # インデックス設定
-    responses_df.set_index('student_id',inplace=True)
-    prob_df.set_index('student_id',inplace=True)
-    terms_df.set_index('student_id',inplace=True)
-    auth_df.set_index('student_id',inplace=True)
+    responses_df.set_index('student_id', inplace=True)
+    prob_df.set_index('student_id', inplace=True)
+    terms_df.set_index('student_id', inplace=True)
+    auth_df.set_index('student_id', inplace=True)
     first_choice_df['student_id'] = first_choice_df['student_id'].str.lstrip('0')
     first_choice_df.set_index('student_id', inplace=True)
     return prob_df, auth_df, rank_df, terms_df, responses_df, first_choice_df
 
 prob_df, auth_df, rank_df, terms_df, responses_df, first_choice_df = load_data()
+
+# --- 追加データロード ---
+assignment_df = pd.read_csv("initial_assignment_result.csv", dtype={'student_id':str,'term':int,'assigned_department':str,'matched_priority':float})
+assignment_df['student_id'] = assignment_df['student_id'].str.lstrip('0')
+
+lottery_df = pd.read_csv("lottery_order.csv", dtype={'student_id':str,'lottery_order':int})
+lottery_df['student_id'] = lottery_df['student_id'].str.lstrip('0')
+lottery_df.set_index('student_id', inplace=True)
 
 # --- 認証関数 ---
 def verify_user(sid, pwd):
@@ -66,16 +73,14 @@ def verify_user(sid, pwd):
 # --- ログイン画面 ---
 if not st.session_state['authenticated']:
     st.title("🔐 ログイン")
-    sid = st.text_input("学生番号", key="login_uid")
-    pwd = st.text_input("パスワード", type="password", key="login_pwd")
+    sid_input = st.text_input("学生番号", key="login_uid")
+    pwd_input = st.text_input("パスワード", type="password", key="login_pwd")
     if st.button("ログイン"):
-        if verify_user(sid, pwd):
+        if verify_user(sid_input, pwd_input):
             st.session_state['authenticated'] = True
-            st.session_state['user_id'] = sid.lstrip('0')
+            st.session_state['user_id'] = sid_input.lstrip('0')
         else:
             st.error("認証に失敗しました。")
-    # ここで st.stop() すると、認証成功後に
-    # 同じリクエストで下のコードが続けて実行されます
     st.stop()
 
 # --- 認証後メイン画面 ---
@@ -84,77 +89,71 @@ st.title(f"🎓 選択科アンケート (学生番号={sid})")
 
 # 回答率表示
 all_count = len(terms_df)
-answered_count = responses_df.shape[0]
+answered_count = len(responses_df)
 ratio = answered_count / all_count * 100
 st.markdown(f"🧾 **回答者：{answered_count}/{all_count} 人**（{ratio:.1f}%）")
 if ratio < 70:
     st.warning("⚠️ 回答者が少ないため結果が不安定です。回答を促してください。")
 
-# --- 通過確率比較テーブル (幅調整付き) ---
-st.subheader("🌀 通過確率比較 (順位あり / 全て第1希望)")
+# --- 機能1: 初期配属結果 ---
+st.subheader("🗒️ 初期配属結果")
+my_assign = assignment_df[assignment_df['student_id'] == sid]
+if not my_assign.empty:
+    st.dataframe(
+        my_assign.sort_values('term').set_index('term')[['assigned_department','matched_priority']],
+        use_container_width=True
+    )
+else:
+    st.info("初期配属結果が見つかりません。")
 
-# 1) データ収集
-rows = []
-for i in range(1, 21):
-    hope = responses_df.loc[sid].get(f"hope_{i}")
-    if not hope:
+# --- 機能2: 第1希望通過確率 ---
+st.subheader("📈 第1希望通過確率")
+if sid in first_choice_df.index:
+    my_first = first_choice_df.loc[[sid]]
+    st.dataframe(
+        my_first[['希望科','通過確率']],
+        use_container_width=True
+    )
+else:
+    st.info("第1希望通過確率のデータがありません。")
+
+# --- 機能3: 第1～5希望人数表示（自分より抽選順位が高い学生のみ） ---
+st.subheader("📊 第1～5希望人数 (科ごと・Term1～Term11) - 自分より抽選順位が高い学生のみ")
+my_order = lottery_df.loc[sid, 'lottery_order']
+higher = lottery_df[lottery_df['lottery_order'] < my_order].index.tolist()
+
+counts = {}
+for uid in higher:
+    if uid not in responses_df.index:
         continue
+    default_terms = terms_df.loc[uid, ['term_1','term_2','term_3','term_4']].tolist()
+    for i in range(1, 6):
+        dept = responses_df.loc[uid].get(f'hope_{i}')
+        if pd.isna(dept) or not dept or dept == '-':
+            continue
+        raw = responses_df.loc[uid].get(f'hope_{i}_terms', '')
+        nums = [int(n) for n in re.findall(r"\d+", str(raw))]
+        term_list = [t for t in nums if t in default_terms]
+        use_terms = term_list if term_list else default_terms
+        for t in use_terms:
+            counts[(dept, t)] = counts.get((dept, t), 0) + 1
 
-    # 順位ありシミュレーションの確率
-    ranked = prob_df.loc[sid].get(f"hope_{i}_確率")
-    ranked_str = f"{int(ranked)}%" if pd.notna(ranked) else ""
+rows = [{'診療科': dept, 'Term': term, '人数': cnt} for (dept, term), cnt in counts.items()]
+cnt_df = pd.DataFrame(rows)
+if cnt_df.empty:
+    st.info("該当するデータがありません。")
+else:
+    pivot = cnt_df.pivot(index='診療科', columns='Term', values='人数').fillna(0).astype(int)
+    st.dataframe(pivot, use_container_width=True)
 
-    # 全て第1希望時の確率
-    flat_row = first_choice_df[first_choice_df["希望科"] == hope]
-    flat_str = ""
-    if not flat_row.empty:
-        pct = flat_row["通過確率"].iloc[0]
-        flat_str = f"{pct:.1f}%"
+# --- 人気診療科トップ15 ---
+# （既存コードをそのまま）
+# ... 略 ...
 
-    rows.append({
-        "希望":           f"{i}: {hope}",
-        "順位あり":       ranked_str,
-        "全て第1希望":    flat_str
-    })
+# --- 昨年：一定割合以上配属された科の最大通過順位 ---
+# （既存コードをそのまま）
+# ... 略 ...
 
-# 2) DataFrame 作成＆インデックス設定
-df = pd.DataFrame(rows).set_index("希望")
-
-# 3) 列幅スタイル設定
-styled = df.style.set_table_styles([
-    # インデックス（希望）を広く
-    {
-        'selector': 'th.row_heading, td.row_heading',
-        'props': [('min-width', '300px'), ('text-align', 'left')]
-    },
-    # 「順位あり」列を狭く
-    {
-        'selector': 'th.col_heading.col1, td.col1',
-        'props': [('min-width', '80px'), ('text-align', 'center')]
-    },
-    # 「全て第1希望」列も狭く
-    {
-        'selector': 'th.col_heading.col2, td.col2',
-        'props': [('min-width', '80px'), ('text-align', 'center')]
-    },
-])
-
-# 4) 表示
-st.write(styled)
-
-st.markdown("""
-**説明:**
-- **順位あり**: 学生が実際に入力した希望順位をもとに、各順位で通過できる確率をシミュレーションしたものです。合計確率が100%になります。
-- **全て第1希望**: すべての希望を第1希望として仮定し、他学生との競合を均一化して計算した通過確率です。純粋にその科に配属されそうかどうかが判定できます。
-""")
-
-# --- 希望人数表示 ---
-st.subheader("📋 第1～3希望人数 (科ごと・Term1～Term11)")
-try:
-    dept_summary = pd.read_csv("department_summary.csv", index_col=0)
-    st.dataframe(dept_summary, use_container_width=True)
-except FileNotFoundError:
-    st.warning("department_summary.csv が見つかりません。")
 
 # --- 人気診療科トップ15 (ターム別 抽選順位推定ライン) ---
 st.subheader("🔥 人気診療科トップ15 (ターム別 抽選順位推定ライン)")
