@@ -146,53 +146,70 @@ else:
     pivot = cnt_df.pivot(index='診療科', columns='Term', values='人数').fillna(0).astype(int)
     st.dataframe(pivot, use_container_width=True)
 
-# --- 人気診療科トップ15 ---
-# （既存コードをそのまま）
-# ... 略 ...
+# --- 枠埋まり科（科単位集計）と最大抽選順位 ---
+st.subheader("🏥 枠埋まり科（科単位集計）と最大抽選順位")
 
-# --- 昨年：一定割合以上配属された科の最大通過順位 ---
-# （既存コードをそのまま）
-# ... 略 ...
+# 閾値：100%埋まったものだけ
+THRESHOLD_RATE = 1.0
 
-
-# --- 人気診療科トップ15 (ターム別 抽選順位推定ライン) ---
-st.subheader("🔥 人気診療科トップ15 (ターム別 抽選順位推定ライン)")
-
-# ターム別 CSV を読み込む
-term_rank = pd.read_csv("popular_departments_rank_by_term.csv", dtype={'term': int})
-
-# 表示するタームを選択
-terms = sorted(term_rank['term'].unique())
-selected_term = st.selectbox("表示したいタームを選択", terms, index=0)
-
-# 選択タームの上位15科を抽出し、昇順にソート
-df_term = term_rank[term_rank['term'] == selected_term]
-chart_df = (
-    df_term
-    .nlargest(15, '抽選順位推定ライン')
-    .sort_values('抽選順位推定ライン', ascending=True)
-    .rename(columns={'assigned_department': '診療科'})
+# 1) capacity_df を縦長化
+cap_long = (
+    capacity_df
+    .melt(id_vars=["hospital_department"], var_name="term_label", value_name="capacity")
+    .assign(
+        term=lambda d: d["term_label"].str.extract(r"_(\d+)").astype(int),
+        capacity=lambda d: d["capacity"].astype(int)
+    )
+    .drop(columns="term_label")
 )
 
-# バーチャートとラベル
-base_chart = alt.Chart(chart_df).mark_bar().encode(
-    x=alt.X('抽選順位推定ライン:Q', title='抽選順位推定ライン'),
-    y=alt.Y('診療科:N',
-            sort=alt.EncodingSortField(field='抽選順位推定ライン', order='ascending'),
-            title=None)
-).properties(
-    width=700,
-    height=max(300, len(chart_df) * 30)
+# 2) initial_assignment_result.csv から valid 割当を取得
+valid = assignment_df[assignment_df["assigned_department"] != "未配属"]
+assigned_counts = (
+    valid
+    .groupby(["assigned_department", "term"])
+    .size()
+    .reset_index(name="assigned_count")
+    .rename(columns={"assigned_department": "hospital_department"})
 )
 
-text = base_chart.mark_text(
-    align='left', baseline='middle', dx=3
-).encode(
-    text=alt.Text('抽選順位推定ライン:Q', format='.0f')
+# 3) fill_rate 計算＆枠埋まりフィルタ
+merged = assigned_counts.merge(cap_long, on=["hospital_department", "term"])
+merged["fill_rate"] = merged["assigned_count"] / merged["capacity"]
+full = merged[merged["fill_rate"] >= THRESHOLD_RATE]
+
+# 4) lottery_order をマージして、枠埋まり項目だけ抽出
+with_lottery = (
+    valid
+    .merge(lottery_df, on="student_id")
+    .rename(columns={"assigned_department": "hospital_department"})
+)
+# dept×term の組み合わせでフィルタ
+key_tuples = set(full[["hospital_department","term"]].itertuples(index=False, name=None))
+filled = with_lottery[
+    with_lottery.apply(lambda r: (r["assigned_department"], r["term"]) in key_tuples, axis=1)
+]
+
+# 5) 科ごとに「合計配属人数」と「最大抽選順位」を集計
+dept_summary = (
+    filled
+    .groupby("hospital_department")
+    .agg(
+        total_assigned=("student_id","nunique"),
+        max_lottery_order=("lottery_order","max")
+    )
+    .reset_index()
+    .sort_values("total_assigned", ascending=False)
+    .head(15)
 )
 
-# 合成して表示
-st.altair_chart(base_chart + text, use_container_width=True)
+# 6) 表示
+dept_summary = dept_summary.rename(columns={
+    "hospital_department": "科名",
+    "total_assigned":      "配属人数合計",
+    "max_lottery_order":   "最大抽選順位"
+})
+st.dataframe(dept_summary, use_container_width=True)
 
 
 # --- 昨年：一定割合以上配属された科の最大通過順位 ---
