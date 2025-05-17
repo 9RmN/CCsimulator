@@ -175,7 +175,7 @@ st.altair_chart(layered, use_container_width=True)
 st.subheader("🔖 昨年：一定割合以上配属された科の最大通過順位")
 # データ読み込み
 hist_df = pd.read_csv("2024配属結果.csv", dtype={'student_id':str, 'lottery_order':int})
-cap_df  = pd.read_csv("department_capacity.csv")
+cap_df  = pd.read_csv("department_capacity2024.csv")
 # 長い形式に変換
 records = []
 term_cols = [c for c in hist_df.columns if c.startswith('term_')]
