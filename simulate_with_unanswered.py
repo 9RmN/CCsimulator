@@ -13,9 +13,24 @@ def run_simulation(responses_base: pd.DataFrame,
     with added randomness in assignment for students with the same lottery_order.
     """
     # --- Setup ---
-    hope_cols = [c for c in responses_base.columns if c.startswith('hope_')]
+    hope_cols = [c for c in responses_base.columns if c.startswith('hope_') and not c.endswith('_term')]
     MAX_HOPES = max(int(c.split('_')[1]) for c in hope_cols)
     term_labels = [c for c in terms_df.columns if c.startswith('term_')]
+
+    # --- Build term preferences from hope_i_term columns ---
+    term_prefs = {}
+    for _, row in responses_base.iterrows():
+        sid = row['student_id']
+        prefs = []
+        for i in range(1, MAX_HOPES+1):
+            dept = row.get(f'hope_{i}')
+            term_val = row.get(f'hope_{i}_term')
+            if pd.notna(dept) and pd.notna(term_val):
+                try:
+                    prefs.append((dept, int(term_val)))
+                except:
+                    pass
+        term_prefs[sid] = prefs
 
     # --- Popularity scores for imputation ---
     popularity = defaultdict(int)
@@ -47,9 +62,9 @@ def run_simulation(responses_base: pd.DataFrame,
                 picks.append(choice)
         for idx, dept in enumerate(picks, start=1):
             row[f'hope_{idx}'] = dept
+        row['is_imputed'] = True
         generated.append(row)
     imputed_df = pd.DataFrame(generated)
-    imputed_df['is_imputed'] = True
 
     # --- Combine real and imputed ---
     real_df = responses_base.copy()
@@ -66,35 +81,33 @@ def run_simulation(responses_base: pd.DataFrame,
             for t in term_labels:
                 cap[(dept, t)] = int(r[t]) if not pd.isna(r[t]) else 0
 
-                # Prepare merged DataFrame
+        # Prepare merged DataFrame
         term_map = terms_df[['student_id', term_label]].rename(columns={term_label:'term'})
         merged = (
             all_responses
             .merge(term_map, on='student_id')
             .merge(lottery_df, on='student_id')
         )
-        # Introduce small jitter to lottery_order to randomize allocation order
+        # Introduce small jitter to lottery_order
         merged = merged.copy()
-        # Add uniform random noise less than 1 to preserve general order but allow shuffling
-        merged['_jittered_order'] = (
-            merged['lottery_order'].astype(float)
-            + np.random.rand(len(merged))
-        )
-        # Sort by jittered order
-        merged = merged.sort_values('_jittered_order')
-        # Drop helper column
-        merged = merged.drop(columns=['_jittered_order'])
+        merged['_jittered_order'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged))
+        merged = merged.sort_values('_jittered_order').drop(columns=['_jittered_order'])
 
         # Allocate
         assigned = {}
         for _, row in merged.iterrows():
-            sid = row['student_id']
+            sid  = row['student_id']
             term = row['term']
             used = assigned.get(sid, set())
             placed = False
+            allowed = term_prefs.get(sid, [])
+
             for i in range(1, MAX_HOPES+1):
                 dept = row.get(f'hope_{i}', '')
                 if not dept or dept in used:
+                    continue
+                # Respect term preference if specified
+                if allowed and (dept, term) not in allowed:
                     continue
                 key = (dept, f'term_{term}')
                 if cap.get(key, 0) > 0:
@@ -110,6 +123,7 @@ def run_simulation(responses_base: pd.DataFrame,
                     })
                     placed = True
                     break
+
             if not placed:
                 assignment.append({
                     'student_id': sid,
