@@ -1,4 +1,5 @@
 import pandas as pd
+import re
 
 # --- データ読み込み（student_id をすべて文字列型で統一） ---
 responses   = pd.read_csv("responses.csv",   dtype=str)
@@ -11,30 +12,29 @@ responses['student_id'] = responses['student_id'].str.lstrip('0')
 lottery   ['student_id'] = lottery   ['student_id'].str.lstrip('0')
 terms_df  ['student_id'] = terms_df  ['student_id'].str.lstrip('0')
 
-# 希望列の特定
-hope_columns = [col for col in responses.columns if col.startswith("hope_")]
+# 希望列の特定（純粋な hope_n 列のみ）
+hope_columns = [col for col in responses.columns if re.match(r"^hope_\d+$", col)]
 MAX_HOPES    = max(int(col.split("_")[1]) for col in hope_columns)
 
-# --- ここから追加 ---------------------------------------
-# student_id → [(dept, term), …] を保持する辞書を作成
+# --- 複数ターム対応 term_prefs 辞書の構築 ---
+# student_id → [(dept, term), …]
 term_prefs = {}
 for _, row in responses.iterrows():
     sid = row['student_id']
     prefs = []
     for i in range(1, MAX_HOPES+1):
         dept = row.get(f"hope_{i}")
-        term = row.get(f"hope_{i}_term")  # 先ほど追加した列
-        if pd.notna(dept) and pd.notna(term):
-            try:
-                t = int(term)
-            except ValueError:
-                continue
-            prefs.append((dept, t))
+        terms_list = row.get(f"hope_{i}_terms")
+        if pd.notna(dept) and isinstance(terms_list, list):
+            for t in terms_list:
+                try:
+                    prefs.append((dept, int(t)))
+                except ValueError:
+                    continue
     term_prefs[sid] = prefs
-# --- ここまで追加 ---------------------------------------
 
 # term一覧
-TERM_LABELS = ["term_1", "term_2", "term_3", "term_4"]
+TERM_LABELS = [col for col in terms_df.columns if col.startswith('term_')]
 
 # 初期配属記録
 assignment_result = []
@@ -63,7 +63,7 @@ for term_label in TERM_LABELS:
         sid  = row["student_id"]
         term = row["term"]
         assigned_depts = student_assigned_departments.get(sid, set())
-        allowed = term_prefs.get(sid, [])  # この student の (dept, term) 指定リスト
+        allowed = term_prefs.get(sid, [])
 
         assigned = False
         # 希望順ループ
