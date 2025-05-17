@@ -2,6 +2,7 @@ import pandas as pd
 import random
 import numpy as np
 from collections import defaultdict
+import ast
 
 def run_simulation(responses_base: pd.DataFrame,
                    lottery_df: pd.DataFrame,
@@ -10,11 +11,12 @@ def run_simulation(responses_base: pd.DataFrame,
                    hist_df=None) -> pd.DataFrame:
     """
     Perform assignment simulation including imputed responses for non-respondents,
-    with added randomness in assignment for students with the same lottery_order.
+    with added randomness in assignment for students with the same lottery_order,
+    and respect multiple term preferences per student per department.
     """
     # --- Setup ---
-    # only hope_n columns (exclude hope_n_term and hope_n_terms)
-    hope_cols = [c for c in responses_base.columns if c.startswith('hope_') and not c.endswith('_term') and not c.endswith('_terms')]
+    hope_cols = [c for c in responses_base.columns 
+                 if c.startswith('hope_') and not c.endswith('_term') and not c.endswith('_terms')]
     MAX_HOPES = max(int(c.split('_')[1]) for c in hope_cols)
     term_labels = [c for c in terms_df.columns if c.startswith('term_')]
 
@@ -23,37 +25,47 @@ def run_simulation(responses_base: pd.DataFrame,
     for _, row in responses_base.iterrows():
         sid = row['student_id']
         prefs = []
-        for i in range(1, MAX_HOPES+1):
+        for i in range(1, MAX_HOPES + 1):
             dept = row.get(f'hope_{i}')
-            terms_list = row.get(f'hope_{i}_terms')
-            if pd.notna(dept) and isinstance(terms_list, list):
-                for t in terms_list:
-                    try:
-                        prefs.append((dept, int(t)))
-                    except ValueError:
-                        continue
+            raw_terms = row.get(f'hope_{i}_terms')  # e.g. "[9, 10]"
+            if pd.isna(dept) or pd.isna(raw_terms):
+                continue
+            # parse string representation of list
+            if isinstance(raw_terms, str):
+                try:
+                    terms_list = ast.literal_eval(raw_terms)
+                except Exception:
+                    continue
+            elif isinstance(raw_terms, list):
+                terms_list = raw_terms
+            else:
+                continue
+            for t in terms_list:
+                try:
+                    prefs.append((dept, int(t)))
+                except ValueError:
+                    continue
         term_prefs[sid] = prefs
 
-    # --- Popularity scores for imputation ---
+    # --- Popularity scoring for imputation ---
     popularity = defaultdict(int)
-    for i in range(1, MAX_HOPES+1):
+    for i in range(1, MAX_HOPES + 1):
         w = MAX_HOPES + 1 - i
-        col = f'hope_{i}'
-        for dept in responses_base.get(col, pd.Series()).dropna():
+        for dept in responses_base.get(f'hope_{i}', pd.Series()).dropna():
             if dept and dept != '-':
                 popularity[dept] += w
 
     # --- Identify non-respondents ---
     answered_ids = set(responses_base['student_id'])
-    all_ids      = set(terms_df['student_id'])
-    unresp_ids   = list(all_ids - answered_ids)
+    all_ids = set(terms_df['student_id'])
+    unresp_ids = list(all_ids - answered_ids)
 
     # --- Prepare sampling ---
     dept_list, counts = zip(*popularity.items())
     total = sum(counts)
-    weights = [c/total for c in counts]
+    weights = [c / total for c in counts]
 
-    # --- Impute hopes for non-respondents (no duplicates) ---
+    # --- Impute hopes for non-respondents ---
     generated = []
     for sid in unresp_ids:
         row = {'student_id': sid}
@@ -76,39 +88,39 @@ def run_simulation(responses_base: pd.DataFrame,
     # --- Assignment ---
     assignment = []
     for term_label in term_labels:
-        # Reset capacities
+        # reset capacities
         cap = {}
         for _, r in capacity_df.iterrows():
             dept = r['hospital_department']
             for t in term_labels:
                 cap[(dept, t)] = int(r[t]) if not pd.isna(r[t]) else 0
 
-        # Prepare merged DataFrame
-        term_map = terms_df[['student_id', term_label]].rename(columns={term_label:'term'})
+        # prepare merged
+        term_map = terms_df[['student_id', term_label]].rename(columns={term_label: 'term'})
         merged = (
             all_responses
             .merge(term_map, on='student_id')
             .merge(lottery_df, on='student_id')
         )
-        # Introduce small jitter to lottery_order
+        # jitter lottery order
         merged = merged.copy()
-        merged['_jittered_order'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged))
-        merged = merged.sort_values('_jittered_order').drop(columns=['_jittered_order'])
+        merged['_jitter'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged))*0.01
+        merged = merged.sort_values('_jitter').drop(columns=['_jitter'])
 
-        # Allocate
+        # allocate
         assigned = {}
         for _, row in merged.iterrows():
-            sid  = row['student_id']
+            sid = row['student_id']
             term = row['term']
             used = assigned.get(sid, set())
             placed = False
             allowed = term_prefs.get(sid, [])
 
-            for i in range(1, MAX_HOPES+1):
+            for i in range(1, MAX_HOPES + 1):
                 dept = row.get(f'hope_{i}', '')
                 if not dept or dept in used:
                     continue
-                # Respect term preferences if specified
+                # respect term preference
                 if allowed and (dept, term) not in allowed:
                     continue
                 key = (dept, f'term_{term}')
@@ -125,7 +137,6 @@ def run_simulation(responses_base: pd.DataFrame,
                     })
                     placed = True
                     break
-
             if not placed:
                 assignment.append({
                     'student_id': sid,
@@ -134,5 +145,4 @@ def run_simulation(responses_base: pd.DataFrame,
                     'hope_rank': None,
                     'is_imputed': bool(row.get('is_imputed', False))
                 })
-
     return pd.DataFrame(assignment)
