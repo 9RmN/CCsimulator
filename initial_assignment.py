@@ -2,38 +2,37 @@ import pandas as pd
 import ast
 
 # --- データ読み込み ---
-responses   = pd.read_csv("responses.csv", dtype=str)
-lottery     = pd.read_csv("lottery_order.csv", dtype={"student_id":str, "lottery_order":int})
+responses = pd.read_csv("responses.csv", dtype=str)
+lottery = pd.read_csv("lottery_order.csv", dtype={'student_id': str, 'lottery_order': int})
 capacity_df = pd.read_csv("department_capacity.csv")
-terms_df    = pd.read_csv("student_terms.csv", dtype=str)
+terms_df = pd.read_csv("student_terms.csv", dtype=str)
 
 # student_id の正規化
 for df in (responses, lottery, terms_df):
     df['student_id'] = df['student_id'].str.lstrip('0')
 
 # --- 希望列の特定 ---
-hope_columns = [col for col in responses.columns if col.startswith("hope_")]
-MAX_HOPES    = max(int(col.split("_")[1]) for col in hope_columns)
+hope_columns = [col for col in responses.columns if col.startswith('hope_')]
+MAX_HOPES = max(int(col.split('_')[1]) for col in hope_columns)
 
-# --- term 列ラベル ---
+# --- term 列ラベルと学生タームマップ ---
 TERM_LABELS = [col for col in terms_df.columns if col.startswith('term_')]
-
-# --- 学生ごとのタームマップ ---
 student_terms = {
     row['student_id']: [int(row[col]) for col in TERM_LABELS if pd.notna(row[col])]
     for _, row in terms_df.iterrows()
 }
 
-# --- 科ごとの指定タームマップ作成 ---
+# --- 指定タームマップ作成 ---
 term_prefs = {}
 for _, row in responses.iterrows():
     sid = row['student_id']
     prefs = {}
-    for i in range(1, MAX_HOPES+1):
+    for i in range(1, MAX_HOPES + 1):
         dept = row.get(f"hope_{i}")
-        raw  = row.get(f"hope_{i}_terms")
+        raw = row.get(f"hope_{i}_terms")
         if pd.isna(dept) or pd.isna(raw):
             continue
+        # リスト形式の文字列をパース
         try:
             terms_list = ast.literal_eval(raw) if isinstance(raw, str) else raw
         except Exception:
@@ -41,7 +40,7 @@ for _, row in responses.iterrows():
         prefs[dept] = [int(t) for t in terms_list if str(t).isdigit()]
     term_prefs[sid] = prefs
 
-# --- capacity の辞書化（全 term_* 列を対象） ---
+# --- capacity 辞書化 ---
 cap = {}
 cap_cols = [c for c in capacity_df.columns if c.startswith('term_')]
 for _, row in capacity_df.iterrows():
@@ -54,13 +53,10 @@ for _, row in capacity_df.iterrows():
 assignment_result = []
 student_assigned_departments = {}
 
-# 各 term_* 列ごとの配属処理
+# 各 term_* 列ごとの処理
 for term_label in TERM_LABELS:
-    # term_map を student_id と実ターム番号で取得
-    term_map = (
-        terms_df[['student_id', term_label]]
-        .rename(columns={term_label: 'term'})
-    )
+    # term_map: student_id と実ターム番号
+    term_map = terms_df[['student_id', term_label]].rename(columns={term_label: 'term'})
     term_map['term'] = term_map['term'].astype(int)
 
     # マージ & 抽選順ソート
@@ -84,19 +80,12 @@ for term_label in TERM_LABELS:
             if pd.isna(dept) or dept in used_depts:
                 continue
 
-            # 許可タームリスト: 指定があればそれ、なしなら student_terms
-default = student_terms_map[sid]    # 例えば [2,5,10,11]
-dept_specific = term_prefs[sid].get(dept, [])
-# dept_specific が空なら default をそのまま、
-# そうでなければ dept_specific + (default―dept_specific)
-if dept_specific:
-    # 指定タームも、その他 slot も試せるように
-    allowed = dept_specific + [t for t in default if t not in dept_specific]
-else:
-    allowed = default
+            # 許可ターム取得 (指定 or 全ターム)
+            allowed = term_prefs.get(sid, {}).get(dept, student_terms.get(sid, []))
+            if term not in allowed:
+                continue
 
-
-            # capキーは (dept, term)
+            # 割当処理
             cap_key = (dept, term)
             if cap.get(cap_key, 0) > 0:
                 cap[cap_key] -= 1
@@ -111,7 +100,7 @@ else:
                 assigned = True
                 break
 
-        # 希望が割り当てられなかった場合
+        # 未配属の場合
         if not assigned:
             assignment_result.append({
                 'student_id': sid,
@@ -120,8 +109,6 @@ else:
                 'hope_rank': None
             })
 
-# 結果の保存
-pd.DataFrame(assignment_result).to_csv(
-    'initial_assignment_result.csv', index=False
-)
-print("✅ 初期配属（1人1科1term制約付き with full term range）完了")
+# 結果保存
+pd.DataFrame(assignment_result).to_csv('initial_assignment_result.csv', index=False)
+print("✅ 初期配属（1人1科1term制約付き）完了")
