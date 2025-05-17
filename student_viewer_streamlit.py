@@ -57,20 +57,32 @@ assignment_df = pd.read_csv(
 )
 assignment_df['student_id'] = assignment_df['student_id'].str.lstrip('0')
 
-# シミュレーション割当結果
 sim_assign_df = pd.read_csv(
     "assignment_with_unanswered.csv",
-    dtype={'student_id':str,'term':int,'assigned_department':str,'hope_rank':float,'is_imputed':bool}
+    dtype={'student_id':str,'Term':int,'assigned_department':str,'hope_rank':float,'is_imputed':bool}
 )
 sim_assign_df['student_id'] = sim_assign_df['student_id'].str.lstrip('0')
+# unify term column naming
+if 'Term' in sim_assign_df.columns and 'term' not in sim_assign_df.columns:
+    sim_assign_df.rename(columns={'Term':'term'}, inplace=True)
 
-# 抽選順位
 lottery_df = pd.read_csv(
     "lottery_order.csv",
     dtype={'student_id':str,'lottery_order':int}
 )
 lottery_df['student_id'] = lottery_df['student_id'].str.lstrip('0')
 lottery_df.set_index('student_id', inplace=True)
+
+# department_capacity
+capacity_df = pd.read_csv(
+    "department_capacity.csv",
+    dtype=str
+)
+for col in capacity_df.columns:
+    if col.startswith('term_'):
+        extracted = capacity_df[col].str.extract(r"(\\d+)")
+        capacity_df[col] = extracted.iloc[:, 0].fillna('0').astype(int)
+capacity_df['hospital_department'] = capacity_df['hospital_department'].astype(str)
 
 # --- 認証関数 ---
 def verify_user(sid, pwd):
