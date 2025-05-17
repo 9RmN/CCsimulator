@@ -1,19 +1,37 @@
 import pandas as pd
 
 # --- データ読み込み（student_id をすべて文字列型で統一） ---
-responses = pd.read_csv("responses.csv", dtype=str)
-lottery   = pd.read_csv("lottery_order.csv", dtype={'student_id':str, 'lottery_order':int})
+responses   = pd.read_csv("responses.csv",   dtype=str)
+lottery     = pd.read_csv("lottery_order.csv", dtype={'student_id':str, 'lottery_order':int})
 capacity_df = pd.read_csv("department_capacity.csv")
 terms_df    = pd.read_csv("student_terms.csv", dtype=str)
 
 # student_id の正規化（先頭ゼロ除去）
 responses['student_id'] = responses['student_id'].str.lstrip('0')
-lottery['student_id']   = lottery['student_id'].str.lstrip('0')
-terms_df['student_id']  = terms_df['student_id'].str.lstrip('0')
+lottery   ['student_id'] = lottery   ['student_id'].str.lstrip('0')
+terms_df  ['student_id'] = terms_df  ['student_id'].str.lstrip('0')
 
 # 希望列の特定
 hope_columns = [col for col in responses.columns if col.startswith("hope_")]
 MAX_HOPES    = max(int(col.split("_")[1]) for col in hope_columns)
+
+# --- ここから追加 ---------------------------------------
+# student_id → [(dept, term), …] を保持する辞書を作成
+term_prefs = {}
+for _, row in responses.iterrows():
+    sid = row['student_id']
+    prefs = []
+    for i in range(1, MAX_HOPES+1):
+        dept = row.get(f"hope_{i}")
+        term = row.get(f"hope_{i}_term")  # 先ほど追加した列
+        if pd.notna(dept) and pd.notna(term):
+            try:
+                t = int(term)
+            except ValueError:
+                continue
+            prefs.append((dept, t))
+    term_prefs[sid] = prefs
+# --- ここまで追加 ---------------------------------------
 
 # term一覧
 TERM_LABELS = ["term_1", "term_2", "term_3", "term_4"]
@@ -26,7 +44,6 @@ student_assigned_departments = {}
 for term_label in TERM_LABELS:
     # term_map を student_id と term（数値）で取得
     term_map = terms_df[["student_id", term_label]].rename(columns={term_label: "term"})
-    # マージ（キー student_id は両方文字列）
     merged = (
         responses
         .merge(term_map, on="student_id")
@@ -34,28 +51,31 @@ for term_label in TERM_LABELS:
         .sort_values("lottery_order")
     )
 
-        # capacity キー辞書作成
+    # capacity キー辞書作成
     cap_dict = {}
     for _, row in capacity_df.iterrows():
         dept = row["hospital_department"]
-        for term in capacity_df.columns[1:]:
-            # 欠損値は 0 とみなす
-            val = row[term]
-            cap_dict[(dept, term)] = int(val) if not pd.isna(val) else 0
+        for col in capacity_df.columns[1:]:
+            cap_dict[(dept, col)] = int(row[col]) if pd.notna(row[col]) else 0
 
     # 各学生の配属
     for _, row in merged.iterrows():
-        sid = row["student_id"]
+        sid  = row["student_id"]
         term = row["term"]
         assigned_depts = student_assigned_departments.get(sid, set())
-        assigned = False
+        allowed = term_prefs.get(sid, [])  # この student の (dept, term) 指定リスト
 
+        assigned = False
         # 希望順ループ
         for i in range(1, MAX_HOPES + 1):
-            dept_key = f"hope_{i}"
-            dept = row.get(dept_key)
+            dept = row.get(f"hope_{i}")
             if pd.isna(dept) or dept in assigned_depts:
                 continue
+
+            # ターム指定がある場合、その組み合わせ以外はスキップ
+            if allowed and (dept, term) not in allowed:
+                continue
+
             cap_key = (dept, f"term_{term}")
             if cap_dict.get(cap_key, 0) > 0:
                 cap_dict[cap_key] -= 1
