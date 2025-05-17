@@ -51,11 +51,21 @@ print("✅ form_responses_final.csv を保存しました")
 print("🔄 responses.csv に変換中...")
 try:
     df2 = pd.read_csv("form_responses_final.csv", dtype=str)
+
+    # グリッド質問の列名マッピング (第n希望 → "希望ターム [第n希望]")
+    term_columns = {
+        i: f"希望ターム [第{i}希望]"
+        for i in range(1, 21)
+        if f"希望ターム [第{i}希望]" in df2.columns
+    }
+
     output = {
         "student_id": df2.iloc[:, 1].str.lstrip("0"),
         "password":   df2.iloc[:, 2]
     }
+
     for i in range(1, 21):
+        # 科目の読み取り（既存ロジック）
         hcol = i * 2 + 1
         dcol = i * 2 + 2
         try:
@@ -65,16 +75,31 @@ try:
         except Exception:
             combined = pd.NA
         output[f"hope_{i}"] = combined
+
+        # グリッド回答からターム番号を取り出し
+        grid_col = term_columns.get(i)
+        if grid_col:
+            raw = df2[grid_col].fillna("")            # 例: "3ターム"
+            # 数字部分だけ抽出して Int 型に
+            term_num = raw.str.extract(r"^(\d+)")[0].astype("Int64")
+            output[f"hope_{i}_term"] = term_num
+        else:
+            output[f"hope_{i}_term"] = pd.NA
+
+    # DataFrame 化＋重複削除
     responses = pd.DataFrame(output)
     before = len(responses)
     responses = responses.drop_duplicates(subset="student_id", keep="last")
     deleted = before - len(responses)
     print(f"✅ 重複排除: {deleted} 件削除, 残り {len(responses)} 件")
+
+    # CSV 出力
     responses.to_csv("responses.csv", index=False)
     print("✅ responses.csv を生成しました")
 except Exception as e:
     print("❌ responses.csv への変換に失敗:", e)
     exit(1)
+
 
 # --- Step 3: auth.csv 生成（PEPPER 必要） ---
 if PEPPER:
