@@ -17,33 +17,31 @@ terms_df['student_id']  = terms_df['student_id'].str.lstrip('0')
 hope_columns = [col for col in responses.columns if re.fullmatch(r"hope_\d+", col)]
 MAX_HOPES = max(int(col.split('_')[1]) for col in hope_columns)
 
-# --- 複数ターム希望の取り込み ---
-# responses.csv に生成された hope_n_terms 列（文字列またはリスト）をパース
+# --- 複数ターム希望の取り込み: sid -> {dept: [terms]} ---
 term_prefs = {}
 for _, row in responses.iterrows():
     sid = row['student_id']
-    prefs = []
+    dmap = {}
     for i in range(1, MAX_HOPES+1):
         dept = row.get(f"hope_{i}")
-        raw_terms = row.get(f"hope_{i}_terms")  # 例: "[9, 10]"
-        if pd.isna(dept) or pd.isna(raw_terms):
+        raw = row.get(f"hope_{i}_terms")
+        if pd.isna(dept) or pd.isna(raw):
             continue
-        # raw_terms が文字列ならリストに変換
-        if isinstance(raw_terms, str):
+        # 文字列 "[9, 10]" をリストに変換
+        if isinstance(raw, str):
             try:
-                terms_list = ast.literal_eval(raw_terms)
+                terms_list = ast.literal_eval(raw)
             except Exception:
                 continue
-        elif isinstance(raw_terms, list):
-            terms_list = raw_terms
+        elif isinstance(raw, list):
+            terms_list = raw
         else:
             continue
+        # 各ターム番号を追加
         for t in terms_list:
-            try:
-                prefs.append((dept, int(t)))
-            except ValueError:
-                continue
-    term_prefs[sid] = prefs
+            if str(t).isdigit():
+                dmap.setdefault(dept, []).append(int(t))
+    term_prefs[sid] = dmap
 
 # term 列ラベルのリスト
 TERM_LABELS = [col for col in terms_df.columns if col.startswith('term_')]
@@ -55,10 +53,10 @@ student_assigned = {}
 # term ごとにループ
 for term_label in TERM_LABELS:
     # term_map: student_id と期番号 (int)
-    term_map = terms_df[['student_id', term_label]].rename(columns={term_label:'term'})
+    term_map = terms_df[['student_id', term_label]].rename(columns={term_label: 'term'})
     term_map['term'] = term_map['term'].astype(int)
 
-    # merge して lottery_order ソート
+    # merge & sort
     merged = (
         responses
         .merge(term_map, on='student_id')
@@ -66,27 +64,27 @@ for term_label in TERM_LABELS:
         .sort_values('lottery_order')
     )
 
-    # capacity 辞書化
+    # capacity 辞書作成
     cap_dict = {}
     for _, cap_row in capacity_df.iterrows():
         dept = cap_row['hospital_department']
         for tcol in TERM_LABELS:
             cap_dict[(dept, tcol)] = int(cap_row[tcol]) if pd.notna(cap_row[tcol]) else 0
 
-    # 学生ごと配属
+    # 配属ループ
     for _, row in merged.iterrows():
         sid = row['student_id']
         term = row['term']
-        allowed = term_prefs.get(sid, [])
         used = student_assigned.get(sid, set())
         placed = False
+        allowed_map = term_prefs.get(sid, {})
 
         for i in range(1, MAX_HOPES+1):
             dept = row.get(f"hope_{i}")
             if pd.isna(dept) or dept in used:
                 continue
-            # ターム指定があればフィルタ
-            if allowed and (dept, term) not in allowed:
+            # その科にのみターム指定がある場合、指定外タームはスキップ
+            if dept in allowed_map and term not in allowed_map[dept]:
                 continue
             cap_key = (dept, f"term_{term}")
             if cap_dict.get(cap_key, 0) > 0:
