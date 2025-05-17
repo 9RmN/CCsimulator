@@ -80,9 +80,16 @@ for term_label in TERM_LABELS:
             if pd.isna(dept) or dept in used_depts:
                 continue
 
-            # 許可ターム取得 (指定 or 全ターム)
-            allowed = term_prefs.get(sid, {}).get(dept, student_terms.get(sid, []))
-            if term not in allowed:
+            # 許可ターム取得（指定ターム優先で、なければ全ターム）
+default_terms = student_terms.get(sid, [])
+dept_specific = term_prefs.get(sid, {}).get(dept, [])
+if dept_specific:
+    allowed = dept_specific + [t for t in default_terms if t not in dept_specific]
+else:
+    allowed = default_terms
+# 指定／デフォルトから得たタームの中で現在の term を試す
+if term not in allowed:
+    continue
                 continue
 
             # 割当処理
