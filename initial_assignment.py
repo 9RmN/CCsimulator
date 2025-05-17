@@ -1,8 +1,4 @@
 import pandas as pd
-import random
-import numpy as np
-from collections import defaultdict
-import ast
 
 # --- データ読み込み ---
 responses   = pd.read_csv("responses.csv", dtype=str)
@@ -10,151 +6,100 @@ lottery     = pd.read_csv("lottery_order.csv", dtype={"student_id":str, "lottery
 capacity_df = pd.read_csv("department_capacity.csv")
 terms_df    = pd.read_csv("student_terms.csv", dtype=str)
 
-# student_id の正規化
+# 正規化
 responses['student_id'] = responses['student_id'].str.lstrip('0')
 lottery['student_id']   = lottery['student_id'].str.lstrip('0')
 terms_df['student_id']  = terms_df['student_id'].str.lstrip('0')
 
-# hope_n 列のみを特定
-hope_cols = [c for c in responses.columns if c.startswith('hope_') and not (c.endswith('_term') or c.endswith('_terms'))]
+# hope列取得
+hope_cols = [c for c in responses.columns if c.startswith('hope_')]
 MAX_HOPES = max(int(c.split('_')[1]) for c in hope_cols)
-# term 列ラベル
-term_labels = [c for c in terms_df.columns if c.startswith('term_')]
 
-# --- Build term_prefs: sid -> {dept: [terms]} ---
+# term列ラベル取得 & 学生タームマップ
+term_labels = [col for col in terms_df.columns if col.startswith('term_')]
+student_terms_map = {
+    row['student_id']: [int(row[col]) for col in term_labels if pd.notna(row[col])]
+    for _, row in terms_df.iterrows()
+}
+
+# term_prefs: 学生ごと科ごとの指定タームリスト
 term_prefs = {}
 for _, row in responses.iterrows():
     sid = row['student_id']
+    # parse hope_{i}_terms as list
     dmap = {}
     for i in range(1, MAX_HOPES+1):
-        dept = row.get(f'hope_{i}')
-        raw = row.get(f'hope_{i}_terms')
+        dept = row.get(f"hope_{i}")
+        raw = row.get(f"hope_{i}_terms")
         if pd.isna(dept) or pd.isna(raw):
             continue
-        # parse string list
-        if isinstance(raw, str):
-            try:
-                terms_list = ast.literal_eval(raw)
-            except:
-                continue
-        elif isinstance(raw, list):
-            terms_list = raw
-        else:
+        # raw is string of list
+        try:
+            terms = pd.eval(raw)
+        except:
             continue
-        # add terms
-        for t in terms_list:
-            if str(t).isdigit():
-                dmap.setdefault(dept, []).append(int(t))
+        dmap[dept] = [int(t) for t in terms if str(t).isdigit()]
     term_prefs[sid] = dmap
 
-# --- Build student_terms_map: sid -> [all terms] ---
-student_terms_map = {}
-for _, row in terms_df.iterrows():
+# capacity dict 初期化
+cap_dict = {}
+for _, r in capacity_df.iterrows():
+    dept = r['hospital_department']
+    for tcol in term_labels:
+        cap_dict[(dept, int(tcol.split('_')[1]))] = int(r[tcol]) if not pd.isna(r[tcol]) else 0
+
+# 学生をLottery順にソート
+merged_students = (
+    responses
+    .merge(lottery, on='student_id')
+    .sort_values('lottery_order')
+    .reset_index(drop=True)
+)
+
+assignment = []
+student_assigned = {sid: set() for sid in merged_students['student_id']}
+
+# Student→Hope→Term ループ
+for _, row in merged_students.iterrows():
     sid = row['student_id']
-    terms = []
-    for col in term_labels:
-        val = row.get(col)
-        if pd.notna(val) and str(val).isdigit():
-            terms.append(int(val))
-    student_terms_map[sid] = terms
-
-# --- Popularity for imputation ---
-popularity = defaultdict(int)
-for i in range(1, MAX_HOPES+1):
-    w = MAX_HOPES + 1 - i
-    for dept in responses.get(f'hope_{i}', pd.Series()).dropna():
-        if dept and dept != '-':
-            popularity[dept] += w
-
-answered_ids = set(responses['student_id'])
-all_ids      = set(terms_df['student_id'])
-unresp_ids   = list(all_ids - answered_ids)
-
-dept_list, counts = zip(*popularity.items())
-weights = [c/sum(counts) for c in counts]
-
-# Impute hopes for non-respondents
-generated = []
-for sid in unresp_ids:
-    row = {'student_id': sid}
-    picks = []
-    while len(picks) < MAX_HOPES:
-        choice = random.choices(dept_list, weights=weights, k=1)[0]
-        if choice not in picks:
-            picks.append(choice)
-    for idx, dept in enumerate(picks, start=1):
-        row[f'hope_{idx}'] = dept
-    row['is_imputed'] = True
-    generated.append(row)
-imputed_df = pd.DataFrame(generated)
-
-# Combine real and imputed
-real_df = responses.copy()
-real_df['is_imputed'] = False
-all_resp = pd.concat([real_df, imputed_df], ignore_index=True)
-
-# Assignment simulation
-def run_simulation(responses_base, lottery_df, capacity_df, terms_df, hist_df=None):
-    assignment = []
-    for term_label in term_labels:
-        # reset capacities
-        cap = {}
-        for _, r in capacity_df.iterrows():
-            dept = r['hospital_department']
-            for t in term_labels:
-                cap[(dept, t)] = int(r[t]) if not pd.isna(r[t]) else 0
-
-        # merge data
-        term_map = terms_df[['student_id', term_label]].rename(columns={term_label:'term'})
-        term_map['term'] = term_map['term'].astype(int)
-        merged = (
-            all_resp
-            .merge(term_map, on='student_id')
-            .merge(lottery_df, on='student_id')
-        )
-        # jitter
-        merged = merged.copy()
-        merged['_j'] = merged['lottery_order'].astype(float) + np.random.rand(len(merged))*0.01
-        merged = merged.sort_values('_j').drop(columns=['_j'])
-
-        # allocate
-        for _, row in merged.iterrows():
-            sid  = row['student_id']
-            term = row['term']
-            used = set()
-            placed = False
-            allowed_map = term_prefs.get(sid, {})
-            default_terms = student_terms_map.get(sid, [])
-
-            for i in range(1, MAX_HOPES+1):
-                dept = row.get(f'hope_{i}')
-                if not dept or dept in used:
-                    continue
-                # select terms: if dept specified, use that, else all student terms
-                allowed_terms = allowed_map.get(dept, default_terms)
-                if term not in allowed_terms:
-                    continue
-                key = (dept, f'term_{term}')
-                if cap.get(key, 0) > 0:
-                    cap[key] -= 1
-                    used.add(dept)
-                    assignment.append({
-                        'student_id': sid,
-                        'term': term,
-                        'assigned_department': dept,
-                        'hope_rank': i,
-                        'is_imputed': bool(row.get('is_imputed', False))
-                    })
-                    placed = True
-                    break
-
-            if not placed:
-                # fallback remains unchanged
+    used = student_assigned[sid]
+    assigned = False
+    # 各希望順
+    for i in range(1, MAX_HOPES+1):
+        dept = row.get(f"hope_{i}")
+        if pd.isna(dept) or dept in used:
+            continue
+        # 許可ターム取得
+        prefs = term_prefs.get(sid, {}).get(dept, student_terms_map.get(sid, []))
+        # 希望ターム or 全タームから選択
+        for term in prefs:
+            key = (dept, term)
+            if cap_dict.get(key, 0) > 0:
+                # 割当
+                cap_dict[key] -= 1
+                used.add(dept)
                 assignment.append({
                     'student_id': sid,
                     'term': term,
-                    'assigned_department': '未配属',
-                    'hope_rank': None,
-                    'is_imputed': bool(row.get('is_imputed', False))
+                    'assigned_department': dept,
+                    'hope_rank': i
                 })
-    return pd.DataFrame(assignment)
+                assigned = True
+                break
+        if assigned:
+            break
+    # 全希望ループ後に未割当なら未配属
+    if not assigned:
+        # フォールバックなし→未配属
+        for t in student_terms_map.get(sid, []):
+            assignment.append({
+                'student_id': sid,
+                'term': t,
+                'assigned_department': '未配属',
+                'hope_rank': None
+            })
+        # 学生ごとのタームを一度まとめた後の終了
+
+# CSV出力
+pd.DataFrame(assignment).to_csv('initial_assignment_result.csv', index=False)
+print('✅ 初期配属(Student→Hope→Term) 完了')
