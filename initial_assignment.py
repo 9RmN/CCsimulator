@@ -52,11 +52,16 @@ for _, row in capacity_df.iterrows():
 assignment_result = []
 student_assigned_departments = {}
 
-# 各 term_* 列ごとの処理
+# 各タームスロットごとの処理
 for term_label in TERM_LABELS:
-    term_map = terms_df[['student_id', term_label]].rename(columns={term_label: 'term'})
+    # student_terms の term_label から実ターム番号を取得
+    term_map = (
+        terms_df[['student_id', term_label]]
+        .rename(columns={term_label: 'term'})
+    )
     term_map['term'] = term_map['term'].astype(int)
 
+    # マージ & 抽選順ソート
     merged = (
         responses
         .merge(term_map, on='student_id')
@@ -64,65 +69,34 @@ for term_label in TERM_LABELS:
         .sort_values('lottery_order')
     )
 
+    # 学生ごとの処理
     for _, row in merged.iterrows():
         sid = row['student_id']
         term = row['term']
         used_depts = student_assigned_departments.get(sid, set())
         assigned = False
 
+        # 第1～MAX_HOPES希望までループ
         for i in range(1, MAX_HOPES + 1):
             dept = row.get(f"hope_{i}")
             if pd.isna(dept) or dept in used_depts:
                 continue
 
-            # 許可ターム取得（指定タームを最優先）
-default_terms = student_terms.get(sid, [])
-dept_specific = term_prefs.get(sid, {}).get(dept, [])
+            # 指定ターム優先のallowedリストを作成
+            default_terms = student_terms.get(sid, [])
+            dept_specific = term_prefs.get(sid, {}).get(dept, [])
+            if dept_specific:
+                # 指定タームを先に、以降はデフォルトタームを追加
+                allowed = dept_specific + [t for t in default_terms if t not in dept_specific]
+            else:
+                # 指定タームなしなら全タームを対象
+                allowed = default_terms
 
-# まず指定タームのみ試す
-if dept_specific:
-    for t in dept_specific:
-        if t == term:
-            cap_key = (dept, term)
-            if cap.get(cap_key, 0) > 0:
-                cap[cap_key] -= 1
-                assignment_result.append({
-                    'student_id': sid,
-                    'term': term,
-                    'assigned_department': dept,
-                    'hope_rank': i
-                })
-                used_depts.add(dept)
-                student_assigned_departments[sid] = used_depts
-                assigned = True
-            break
-    # 指定タームを試した後はデフォルトは試さない
-    if assigned:
-        break
-    else:
-        continue
-
-# dept_specific がない場合のみデフォルトタームを試す
-for t in default_terms:
-    if t != term:
-        continue
-    cap_key = (dept, term)
-    if cap.get(cap_key, 0) > 0:
-        cap[cap_key] -= 1
-        assignment_result.append({
-            'student_id': sid,
-            'term': term,
-            'assigned_department': dept,
-            'hope_rank': i
-        })
-        used_depts.add(dept)
-        student_assigned_departments[sid] = used_depts
-        assigned = True
-    break
+            # 現在のslot term がallowedに含まれるかを確認
             if term not in allowed:
                 continue
 
-            # 割当処理
+            # 空きがあれば割当
             cap_key = (dept, term)
             if cap.get(cap_key, 0) > 0:
                 cap[cap_key] -= 1
@@ -137,6 +111,7 @@ for t in default_terms:
                 assigned = True
                 break
 
+        # すべての希望で配属できなかった場合
         if not assigned:
             assignment_result.append({
                 'student_id': sid,
