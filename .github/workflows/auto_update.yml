@@ -57,10 +57,10 @@ jobs:
           git commit -m "chore: light data update [skip ci]" || echo "No changes to commit"
           git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main
 
+jobs:
   first_choice_sim:
     name: First-Choice Precompute
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -75,21 +75,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Generate First Choice Probabilities
+      - name: Run simulate_each_as_first.py for all students
         run: python simulate_each_as_first.py
-
-      - name: Sync with remote
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git stash || true
-          git pull origin main --rebase || true
-          git stash pop || true
 
       - name: Commit first-choice CSV
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add first_choice_probabilities.csv
           git commit -m "chore: first-choice precompute [skip ci]" || echo "No changes to commit"
           git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main
