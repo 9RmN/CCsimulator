@@ -4,7 +4,7 @@ import random
 import re
 from collections import defaultdict
 
-N_SIMULATIONS = 30
+N_SIMULATIONS = 5
 
 def parse_term_list(raw, default_terms):
     if pd.isna(raw) or not str(raw).strip():
@@ -96,12 +96,13 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
             merged['_ord'] = merged['lottery_order'] + np.random.rand(len(merged))*0.01
             merged = merged.sort_values('_ord').drop(columns=['_ord'])
 
-            assigned = {}
+            assigned = defaultdict(set)  # 修正箇所: defaultdict(set) を使用
             for _, r in merged.iterrows():
-                sid, placed = r['student_id'], False
-                used = assigned.get(sid, set())
+                sid = r['student_id']
+                used = assigned[sid]  # 修正箇所: 正しくsetを初期化
+                placed = False
 
-                for ti in range(1,5):
+                for ti in range(1, 5):
                     if placed:
                         break
                     term_month = r.get(f'term_{ti}')
@@ -120,13 +121,13 @@ def simulate_each_as_first(student_id: str) -> pd.DataFrame:
                         if cap.get((dept, term_month), 0) > 0:
                             cap[(dept, term_month)] -= 1
                             used.add(dept)
-                            assigned[sid] = used
                             if sid == student_id and dept == target:
                                 success += 1
                             placed = True
                             break
-            pct = round(success / N_SIMULATIONS * 100, 1)
-            results.append({'student_id': student_id, '希望科': target, '通過確率': pct})
+
+        pct = round(success / N_SIMULATIONS * 100, 1)
+        results.append({'student_id': student_id, '希望科': target, '通過確率': pct})
 
     return pd.DataFrame(results)
 
