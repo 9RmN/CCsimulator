@@ -82,9 +82,9 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git stash
-          git pull origin main --rebase
-          git stash pop
+          git stash || true
+          git pull origin main --rebase || true
+          git stash pop || true
 
       - name: Commit first-choice CSV
         env:
