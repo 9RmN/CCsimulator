@@ -4,7 +4,7 @@ import random
 import re
 from collections import defaultdict
 
-N_SIMULATIONS = 5
+N_SIMULATIONS = 20
 
 def parse_term_list(raw, default_terms):
     if pd.isna(raw) or not str(raw).strip():
